@@ -20,5 +20,25 @@ model:
 training:
   batch_size: 64
   lr: 1.0e-3
+  weight_decay: 1.0e-2
   epochs: 100
+  device: cuda
+  lambda_aux: 0.5       # final weight for ℒ_aux in total loss
+  lambda_cos: 0.5       # weight for cosine term inside ℒ_aux
+  lambda_aux_init: 0.1  # λ at epoch 0 (warm-up start)
+  lambda_warmup_epochs: 20  # epochs to linearly ramp λ from init → final
+  log_every: 10         # log metrics every N steps
+  save_every: 10        # save checkpoint every N epochs
+  checkpoint_dir: checkpoints
+
+finetune:
+  pretrained_ckpt: checkpoints/pretrain_epoch100.pt
+  n_classes: 3
+  batch_size: 64
+  lr: 5.0e-4
+  encoder_lr: 1.0e-5     # lower LR for pretrained encoder
+  weight_decay: 1.0e-2
+  epochs: 30
+  dropout: 0.3
+  freeze_encoder: false   # false = fine-tune encoder with lower LR
   device: cuda

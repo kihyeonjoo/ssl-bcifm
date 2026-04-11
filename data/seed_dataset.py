@@ -96,8 +96,12 @@ class SEEDDataset(Dataset):
 
         self.band_stft = BandSTFT(fs=self.FS, n_fft=n_fft, hop_length=hop_length)
 
-        # List of (eeg_segment: np.ndarray (62, L), label: int)
-        self._segments: List[Tuple[np.ndarray, int]] = []
+        # List of (eeg_segment: np.ndarray (62, L), label: int, trial_id: int)
+        # trial_id is a global integer that uniquely identifies each EEG trial
+        # across subjects and sessions — used by TemporalPairDataset.
+        self._segments: List[Tuple[np.ndarray, int, int]] = []
+        self._trial_to_indices: Dict[int, List[int]] = {}  # trial_id → segment indices
+        self._trial_counter: int = 0   # incremented once per trial loaded
         self._load(subjects or list(range(1, 16)), sessions or [1, 2, 3])
 
     # ── public helpers ────────────────────────────────────────────────────────
@@ -110,7 +114,7 @@ class SEEDDataset(Dataset):
         return len(self._segments)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        eeg_np, label = self._segments[idx]
+        eeg_np, label, _trial_id = self._segments[idx]
 
         eeg = torch.from_numpy(eeg_np)  # (62, L)
 
@@ -158,14 +162,18 @@ class SEEDDataset(Dataset):
             raw_label = _SEED_LABEL_SEQ[trial_idx % len(_SEED_LABEL_SEQ)]
             label = raw_label + 1 if self.remap_labels else raw_label  # −1/0/1 → 0/1/2
             self._slice_trial(eeg, label)
+            self._trial_counter += 1
 
     def _slice_trial(self, eeg: np.ndarray, label: int) -> None:
         """Slice a single trial (62, T) into overlapping windows."""
+        trial_id = self._trial_counter
         T = eeg.shape[1]
         start = 0
         while start + self.segment_length <= T:
+            seg_idx = len(self._segments)
             seg = eeg[:, start : start + self.segment_length]  # (62, L)  — copy-on-slice
-            self._segments.append((np.array(seg, copy=False), label))
+            self._segments.append((np.array(seg, copy=False), label, trial_id))
+            self._trial_to_indices.setdefault(trial_id, []).append(seg_idx)
             start += self.step
 
     def _find_mat(self, subj: int, sess: int) -> Optional[str]:
