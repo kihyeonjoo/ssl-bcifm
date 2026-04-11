@@ -1,0 +1,24 @@
+data:
+  root: /path/to/SEED
+  subjects: null        # null = all 15 subjects
+  sessions: null        # null = all 3 sessions
+  segment_length: 800   # samples  (4 s @ 200 Hz)
+  step: 200             # sliding-window step (1 s, 75 % overlap)
+  n_fft: 200            # FFT size → 1 Hz/bin at 200 Hz
+  hop_length: 40        # STFT hop  → 0.2 s time step
+
+model:
+  n_channels_per_hemi: 27
+  n_bands: 4
+  d_model: 256
+  cnn_channels: [32, 64, 128]   # SpectroSpatialCNN hidden stages
+  n_heads: 8                    # TemporalTransformer attention heads
+  n_layers: 4                   # Transformer depth
+  dim_feedforward: 1024
+  dropout: 0.1
+
+training:
+  batch_size: 64
+  lr: 1.0e-3
+  epochs: 100
+  device: cuda
