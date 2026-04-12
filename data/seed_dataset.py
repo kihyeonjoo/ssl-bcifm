@@ -86,6 +86,7 @@ class SEEDDataset(Dataset):
         hop_length: int = 40,
         remap_labels: bool = True,
         transform: Optional[Callable] = None,
+        normalize: bool = True,
     ) -> None:
         super().__init__()
         self.root = root
@@ -93,6 +94,7 @@ class SEEDDataset(Dataset):
         self.step = step
         self.remap_labels = remap_labels
         self.transform = transform
+        self.normalize = normalize
 
         self.band_stft = BandSTFT(fs=self.FS, n_fft=n_fft, hop_length=hop_length)
 
@@ -126,6 +128,12 @@ class SEEDDataset(Dataset):
         left_feat  = self.band_stft(left_eeg)
         right_feat = self.band_stft(right_eeg)
 
+        # Per-channel z-score normalisation (across bands × time)
+        # Removes subject-level scale drift while preserving band structure.
+        if self.normalize:
+            left_feat  = self._zscore_per_channel(left_feat)
+            right_feat = self._zscore_per_channel(right_feat)
+
         if self.transform is not None:
             left_feat, right_feat = self.transform(left_feat, right_feat)
 
@@ -134,6 +142,17 @@ class SEEDDataset(Dataset):
             "right": right_feat,                                  # (27, 4, T_frames)
             "label": torch.tensor(label, dtype=torch.long),
         }
+
+    @staticmethod
+    def _zscore_per_channel(feat: torch.Tensor) -> torch.Tensor:
+        """Per-channel z-score across (bands, time).
+
+        Input  : (C, B, T)
+        Output : (C, B, T)  — each channel has mean 0, std 1 across B × T
+        """
+        mean = feat.mean(dim=(1, 2), keepdim=True)   # (C, 1, 1)
+        std  = feat.std(dim=(1, 2), keepdim=True) + 1e-6
+        return (feat - mean) / std
 
     # ── internal loading ──────────────────────────────────────────────────────
 
@@ -177,17 +196,30 @@ class SEEDDataset(Dataset):
             start += self.step
 
     def _find_mat(self, subj: int, sess: int) -> Optional[str]:
-        """Return the .mat file path for a given subject / session, or None."""
-        base = os.path.join(self.root, "Preprocessed_EEG", str(subj))
-        if not os.path.isdir(base):
+        """Return the .mat file path for a given subject / session, or None.
+
+        Supports two directory layouts:
+          Layout A (flat)  : Preprocessed_EEG/<subj>_<date>.mat
+          Layout B (nested): Preprocessed_EEG/<subj>/<date>.mat
+        """
+        eeg_dir = os.path.join(self.root, "Preprocessed_EEG")
+
+        # ── Layout A: flat files named  <subj>_<date>.mat ────────────────
+        prefix = f"{subj}_"
+        candidates = sorted(
+            f for f in os.listdir(eeg_dir)
+            if f.startswith(prefix) and f.endswith(".mat")
+        )
+        if candidates:
+            if len(candidates) >= sess:
+                return os.path.join(eeg_dir, candidates[sess - 1])
             return None
 
-        candidates = sorted(f for f in os.listdir(base) if f.endswith(".mat"))
-        if not candidates:
+        # ── Layout B: nested  <subj>/<session>.mat ───────────────────────
+        subj_dir = os.path.join(eeg_dir, str(subj))
+        if not os.path.isdir(subj_dir):
             return None
-
-        # If there are multiple files, pick the one that best matches the session
-        # index (some releases use one .mat per session, named by date).
-        if len(candidates) >= sess:
-            return os.path.join(base, candidates[sess - 1])
-        return os.path.join(base, candidates[0])
+        nested = sorted(f for f in os.listdir(subj_dir) if f.endswith(".mat"))
+        if len(nested) >= sess:
+            return os.path.join(subj_dir, nested[sess - 1])
+        return None

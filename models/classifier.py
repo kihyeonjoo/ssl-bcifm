@@ -59,7 +59,11 @@ class AsymmetryFusionClassifier(nn.Module):
         fusion_dim = 4 * d_model
         self.head = nn.Sequential(
             nn.LayerNorm(fusion_dim),
-            nn.Linear(fusion_dim, d_model),
+            nn.Linear(fusion_dim, 2 * d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.LayerNorm(2 * d_model),
+            nn.Linear(2 * d_model, d_model),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(d_model, n_classes),

@@ -1,5 +1,5 @@
 data:
-  root: /path/to/SEED
+  root: /mnt/data/original/SEED
   subjects: null        # null = all 15 subjects
   sessions: null        # null = all 3 sessions
   segment_length: 800   # samples  (4 s @ 200 Hz)
@@ -40,5 +40,5 @@ finetune:
   weight_decay: 1.0e-2
   epochs: 30
   dropout: 0.3
-  freeze_encoder: false   # false = fine-tune encoder with lower LR
+  freeze_encoder: false   # false = full fine-tuning with differential LR
   device: cuda

@@ -39,13 +39,29 @@ EEG (62ch)
 
 3. **ℒ_main** = MSE(복원값, 원본 masked band), 마스킹된 대역 인덱스에서만 계산.
 
-#### Auxiliary Pretext Task — Temporal Delta Asymmetry Prediction *(예정)*
+#### Auxiliary Pretext Task — Temporal Delta Asymmetry Prediction
 
-좌우 반구 간 band power 시간 차분(Δ)의 비대칭 패턴 예측.
+같은 trial 내 두 시간 구간 (t₁, t₂)을 샘플링하여 비대칭 변화량 Δa를 예측.
+
+```
+a(t) = z_L(t) − z_R(t)           ← asymmetry vector
+Δa   = a(t₂) − a(t₁)            ← temporal delta (ground truth)
+Δâ   = P_θ([z_L(t₁); z_R(t₁)])  ← predictor output
+
+ℒ_aux = MSE(Δa, Δâ) + λ_cos · (1 − cos_sim(Δa, Δâ))
+```
+
+λ_aux는 linear warm-up: 0.1 → 0.5 (20 epoch).
 
 #### Downstream Task — Emotion Classification
 
-Pretrained encoder E_φ의 좌우 CLS embedding을 concat한 `z_joint (B, 2d)`에 분류 헤드 부착 후 fine-tuning.
+Pretrained encoder E_φ의 좌우 CLS embedding을 asymmetry-aware fusion 후 분류 헤드 부착.
+
+```
+z = [ z_L ; z_R ; z_L − z_R ; z_L ⊙ z_R ]  ∈ R^{4·d_model}
+```
+
+Leave-One-Subject-Out (LOSO) cross-validation으로 평가.
 
 ---
 
@@ -81,16 +97,20 @@ Input: (B, C_h=27, 4, T=16) per hemisphere
 ```
 ssl-bcifm/
 ├── configs/
-│   └── seed.yaml               # 하이퍼파라미터
+│   └── seed.yaml                  # 하이퍼파라미터 (pretrain + finetune)
 ├── data/
-│   ├── preprocessing.py        # 채널 분리 + BandSTFT (STFT → 4-band features)
-│   └── seed_dataset.py         # SEEDDataset (sliding window, hemisphere split)
+│   ├── preprocessing.py           # 채널 분리 + BandSTFT (STFT → 4-band log-power)
+│   ├── seed_dataset.py            # SEEDDataset (sliding window, hemisphere split)
+│   └── temporal_pair_dataset.py   # TemporalPairDataset (같은 trial 내 t₁,t₂ 쌍)
 ├── models/
-│   └── encoder.py              # SpectroSpatialCNN + TemporalTransformer
-│                               # HemisphereEncoder + DualStreamEncoder (E_φ)
+│   ├── encoder.py                 # SpectroSpatialCNN + TemporalTransformer
+│   │                              # HemisphereEncoder + DualStreamEncoder (E_φ)
+│   └── classifier.py             # AsymmetryFusionClassifier (downstream head)
 ├── tasks/
-│   └── cross_hemisphere.py     # BandSelectiveMasking + CrossHemisphereDecoder
-│                               # CrossHemisphereMaskedPrediction (ℒ_main)
+│   ├── cross_hemisphere.py        # CrossHemisphereMaskedPrediction (ℒ_main)
+│   └── temporal_delta_asymmetry.py # TemporalDeltaAsymmetry (ℒ_aux)
+├── pretrain.py                    # Pretraining loop (ℒ_main + λ·ℒ_aux)
+├── finetune.py                    # LOSO cross-validation fine-tuning
 ├── utils/
 ├── requirements.txt
 └── CLAUDE.md
@@ -141,61 +161,111 @@ Midline (8ch, discarded): FPZ, FZ, FCZ, CZ, CPZ, PZ, POZ, OZ
 
 ---
 
-## Requirements
+## Setup
+
+### 1. 가상환경 생성
 
 ```bash
+conda create -n bcifm python=3.11 -y
+conda activate bcifm
 pip install -r requirements.txt
 ```
 
+### 2. 데이터 경로 설정
+
+[configs/seed.yaml](configs/seed.yaml)의 `data.root`를 SEED 데이터셋 경로로 수정:
+
+```yaml
+data:
+  root: /mnt/data/original/SEED   # Preprocessed_EEG/ 폴더가 있는 경로
 ```
-torch>=1.9.0
-torchaudio>=0.9.0
-numpy>=1.21
-scipy>=1.7
-pyyaml>=6.0
+
+SEED 데이터 구조:
+```
+SEED/
+  Preprocessed_EEG/
+    1_20131027.mat    # Subject 1, Session 1
+    1_20131030.mat    # Subject 1, Session 2
+    ...
+    15_20131105.mat   # Subject 15, Session 3
 ```
 
 ---
 
-## Quick Start
+## How to Run
 
-```python
-from data.seed_dataset import SEEDDataset
-from models.encoder import DualStreamEncoder
-from tasks.cross_hemisphere import CrossHemisphereMaskedPrediction
+### Step 1. Pretraining
 
-# Dataset
-dataset = SEEDDataset(root="/path/to/SEED", segment_length=800, step=200)
-# item['left'], item['right']: (27, 4, 16)  /  item['label']: scalar
+```bash
+# 기본 실행
+python pretrain.py --config configs/seed.yaml
 
-# Encoder (shared weights)
-encoder = DualStreamEncoder(
-    n_channels_per_hemi=27, n_bands=4, d_model=256,
-    cnn_channels=(32, 64, 128), n_heads=8, n_layers=4,
-)
+# wandb 로깅 포함
+python pretrain.py --config configs/seed.yaml --wandb_project ssl-bcifm
 
-# Pretext task
-task = CrossHemisphereMaskedPrediction(encoder=encoder, d_model=256)
+# 백그라운드 실행 (터미널 닫아도 유지)
+nohup python -u pretrain.py --config configs/seed.yaml --wandb_project ssl-bcifm > pretrain.log 2>&1 &
 
-# Forward
-out = task(batch["left"], batch["right"])
-loss     = out["loss"]       # ℒ_main (MSE)
-z_left   = out["z_left"]    # (B, 256)
-z_right  = out["z_right"]   # (B, 256)
+# 로그 실시간 확인
+tail -f pretrain.log
+```
+
+Checkpoint는 `checkpoints/` 폴더에 매 10 epoch마다 저장.
+
+### Step 2. Fine-tuning (LOSO-CV)
+
+`configs/seed.yaml`의 `finetune.pretrained_ckpt`에 사용할 checkpoint 경로 지정:
+
+```yaml
+finetune:
+  pretrained_ckpt: checkpoints/pretrain_epoch100.pt
+```
+
+```bash
+# 기본 실행
+python finetune.py --config configs/seed.yaml
+
+# wandb 로깅 포함
+python finetune.py --config configs/seed.yaml --wandb_project ssl-bcifm-ft
+
+# 백그라운드 실행
+nohup python -u finetune.py --config configs/seed.yaml --wandb_project ssl-bcifm-ft > finetune.log 2>&1 &
+```
+
+15명 LOSO-CV 완료 후 accuracy / macro-F1 (mean ± std) 출력.
+
+### 프로세스 관리
+
+```bash
+# 실행 중인 프로세스 확인
+pgrep -af "pretrain.py\|finetune.py"
+
+# 프로세스 종료
+kill <PID>
+```
+
+### 빠른 테스트 (subject 일부만)
+
+```yaml
+data:
+  subjects: [1, 2, 3]    # 3명만 로드
+training:
+  epochs: 5              # 적은 epoch으로 테스트
 ```
 
 ---
 
 ## Configuration
 
-[configs/seed.yaml](configs/seed.yaml) 에서 모든 하이퍼파라미터 관리:
+[configs/seed.yaml](configs/seed.yaml)에서 모든 하이퍼파라미터 관리:
 
 ```yaml
 data:
-  segment_length: 800   # 4 s window @ 200 Hz
-  step: 200             # 1 s stride  (75 % overlap)
-  n_fft: 200            # 1 Hz/bin frequency resolution
-  hop_length: 40        # 0.2 s STFT hop
+  root: /mnt/data/original/SEED
+  segment_length: 800       # 4 s window @ 200 Hz
+  step: 200                 # 1 s stride (75 % overlap)
+  n_fft: 200                # 1 Hz/bin frequency resolution
+  hop_length: 40            # 0.2 s STFT hop
 
 model:
   d_model: 256
@@ -203,10 +273,19 @@ model:
   n_heads: 8
   n_layers: 4
 
-training:
+training:                   # pretraining
   batch_size: 64
   lr: 1.0e-3
   epochs: 100
+  lambda_aux: 0.5           # ℒ_aux final weight
+  lambda_aux_init: 0.1      # ℒ_aux warm-up start
+
+finetune:                   # downstream LOSO-CV
+  pretrained_ckpt: checkpoints/pretrain_epoch100.pt
+  lr: 5.0e-4
+  encoder_lr: 1.0e-5        # pretrained encoder용 낮은 LR
+  epochs: 30
+  freeze_encoder: false
 ```
 
 ---

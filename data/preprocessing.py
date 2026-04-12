@@ -137,7 +137,7 @@ class BandSTFT(nn.Module):
             return_complex=True,
         )  # → (C, F, T_frames),  F = n_fft // 2 + 1
 
-        power = spec.abs().pow(2)  # (C, F, T_frames)
+        power = torch.log1p(spec.abs().pow(2))  # log(1+|X|²) — stabilise scale
 
         # Average power within each band  →  stack to (C, 4, T_frames)
         band_tensors = []
