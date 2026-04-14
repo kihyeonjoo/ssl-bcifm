@@ -73,7 +73,7 @@ def build_from_config(cfg: dict) -> dict:
         d_model=mc["d_model"],
         dec_heads=mc["n_heads"],
         dec_layers=2,
-        mask_sigma=0.7,
+        mask_sigma=tc.get("mask_sigma", 0.3),
         dropout=mc["dropout"],
     )
 

@@ -27,6 +27,7 @@ training:
   lambda_cos: 0.5       # weight for cosine term inside ℒ_aux
   lambda_aux_init: 0.1  # λ at epoch 0 (warm-up start)
   lambda_warmup_epochs: 20  # epochs to linearly ramp λ from init → final
+  mask_sigma: 0.3       # Gaussian σ for band masking (smaller = harder)
   log_every: 10         # log metrics every N steps
   save_every: 10        # save checkpoint every N epochs
   checkpoint_dir: checkpoints

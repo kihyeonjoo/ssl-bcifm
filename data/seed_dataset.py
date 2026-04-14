@@ -128,11 +128,13 @@ class SEEDDataset(Dataset):
         left_feat  = self.band_stft(left_eeg)
         right_feat = self.band_stft(right_eeg)
 
-        # Per-channel z-score normalisation (across bands × time)
-        # Removes subject-level scale drift while preserving band structure.
+        # Per-channel mean centering (across bands × time).
+        # Removes subject-level scale drift while preserving variance — the
+        # std is NOT divided out so the reconstruction target retains
+        # meaningful magnitude (avoids trivial "predict-mean" collapse).
         if self.normalize:
-            left_feat  = self._zscore_per_channel(left_feat)
-            right_feat = self._zscore_per_channel(right_feat)
+            left_feat  = self._mean_center_per_channel(left_feat)
+            right_feat = self._mean_center_per_channel(right_feat)
 
         if self.transform is not None:
             left_feat, right_feat = self.transform(left_feat, right_feat)
@@ -144,15 +146,22 @@ class SEEDDataset(Dataset):
         }
 
     @staticmethod
-    def _zscore_per_channel(feat: torch.Tensor) -> torch.Tensor:
-        """Per-channel z-score across (bands, time).
+    def _mean_center_per_channel(feat: torch.Tensor) -> torch.Tensor:
+        """Per-channel mean centering across (bands, time).
 
         Input  : (C, B, T)
-        Output : (C, B, T)  — each channel has mean 0, std 1 across B × T
+        Output : (C, B, T)  — each channel has mean 0 across B × T,
+                              variance preserved (no std division).
+
+        Why no std division?
+        --------------------
+        Dividing by std makes the reconstruction target trivially zero on
+        average, and the masked-band prediction collapses to "predict 0"
+        with MSE ≈ 1. By keeping variance intact, the masked band retains
+        discriminative magnitude information the decoder must learn.
         """
         mean = feat.mean(dim=(1, 2), keepdim=True)   # (C, 1, 1)
-        std  = feat.std(dim=(1, 2), keepdim=True) + 1e-6
-        return (feat - mean) / std
+        return feat - mean
 
     # ── internal loading ──────────────────────────────────────────────────────
 
