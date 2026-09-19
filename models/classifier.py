@@ -17,6 +17,11 @@ import torch
 import torch.nn as nn
 
 from models.encoder import DualStreamEncoder
+from models.lora import (
+    inject_lora,
+    count_trainable_parameters,
+    disable_transformer_fast_path,
+)
 
 
 class AsymmetryFusionClassifier(nn.Module):
@@ -46,24 +51,48 @@ class AsymmetryFusionClassifier(nn.Module):
         n_classes: int = 3,
         dropout: float = 0.3,
         freeze_encoder: bool = False,
+        use_lora: bool = False,
+        lora_r: int = 8,
+        lora_alpha: float = 16.0,
+        lora_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.encoder = encoder
         self.d_model = d_model
+        self.use_lora = use_lora
 
-        if freeze_encoder:
+        if use_lora:
+            # Freeze all pretrained encoder params, then inject LoRA adapters.
+            # Only LoRA A/B and the classification head will be trainable.
+            for p in self.encoder.parameters():
+                p.requires_grad = False
+            n_wrapped = inject_lora(
+                self.encoder,
+                target_names=("linear1", "linear2"),
+                r=lora_r,
+                alpha=lora_alpha,
+                dropout=lora_dropout,
+            )
+            # Force slow-path forward so LoRA-wrapped linears are actually called.
+            n_patched = disable_transformer_fast_path(self.encoder)
+            trainable, total = count_trainable_parameters(self.encoder)
+            print(
+                f"  → LoRA injected: {n_wrapped} Linear layers wrapped "
+                f"(r={lora_r}, α={lora_alpha}).  "
+                f"Fast path disabled on {n_patched} TransformerEncoderLayers.  "
+                f"Encoder trainable: {trainable:,} / {total:,} "
+                f"({100 * trainable / total:.2f}%)"
+            )
+        elif freeze_encoder:
             for p in self.encoder.parameters():
                 p.requires_grad = False
 
         # Fusion dimension: z_L | z_R | z_L-z_R | z_L⊙z_R → 4·d_model
+        # Compact 2-layer head (smaller random-init footprint for stable fine-tuning)
         fusion_dim = 4 * d_model
         self.head = nn.Sequential(
             nn.LayerNorm(fusion_dim),
-            nn.Linear(fusion_dim, 2 * d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.LayerNorm(2 * d_model),
-            nn.Linear(2 * d_model, d_model),
+            nn.Linear(fusion_dim, d_model),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(d_model, n_classes),

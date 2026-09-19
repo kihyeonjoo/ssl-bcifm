@@ -36,10 +36,28 @@ finetune:
   pretrained_ckpt: checkpoints/pretrain_epoch100.pt
   n_classes: 3
   batch_size: 64
-  lr: 5.0e-4
-  encoder_lr: 1.0e-5     # lower LR for pretrained encoder
+  lr: 2.0e-4             # head LR (lowered from 5e-4 for stability)
+  encoder_lr: 1.0e-5     # lower LR for pretrained encoder (full FT mode)
   weight_decay: 1.0e-2
   epochs: 30
-  dropout: 0.3
+  warmup_epochs: 3       # linear LR warmup over first N epochs
+  dropout: 0.2
+  label_smoothing: 0.1   # regularize overconfident single-class predictions
   freeze_encoder: false   # false = full fine-tuning with differential LR
   device: cuda
+
+  # Diagnostics
+  verbose: true          # print per-epoch train loss/acc
+  eval_every_epoch: true # also print test acc/f1 each epoch (slower but informative)
+
+  # LoRA settings (overrides freeze_encoder / encoder_lr when use_lora=true)
+  use_lora: false        # disabled by default — first confirm full FT works
+  lora_r: 8              # rank of low-rank adaptation
+  lora_alpha: 16.0       # scaling factor (effective update ≈ α/r)
+  lora_dropout: 0.0
+  lora_lr: 2.0e-4        # LoRA adapter learning rate
+
+  # Subject-dependent split: first N trials train, rest test
+  # (SEED has 45 trials per subject = 3 sessions × 15.
+  #  Default 30 = sessions 1+2 train, session 3 test)
+  sd_train_trials: 30

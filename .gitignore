@@ -29,3 +29,10 @@ venv/
 .idea/
 *.swp
 .DS_Store
+
+# Aborted / rotated run logs
+*.log.*
+
+# Throwaway smoke and gate configs (generated ad hoc)
+configs/*_smoke.yaml
+configs/seed_labram_gate.yaml
