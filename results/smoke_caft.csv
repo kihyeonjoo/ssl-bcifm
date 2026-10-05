@@ -1,0 +1,2 @@
+accuracy,clip_accuracy,clip_balanced,clip_f1_macro,f1_macro,n_clips,seconds,seed,selected_epoch,subject,val_f1,window_balanced
+0.24520021941854087,0.35555555555555557,0.3555555555555555,0.2625,0.1993671032877937,45,33.5,0,1,1,0.21277218858036978,0.26053467789393947

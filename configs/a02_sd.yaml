@@ -1,0 +1,70 @@
+# SEED subject-dependent.  configs/s0_diag_a02.yaml 에서 파생.
+# 검증은 학습 클립의 뒤쪽 창이다 — LOSO 의 검증 피험자 2명과 다른 방식이고,
+# 표에 그렇게 적어야 한다.  체크포인트/로짓은 저장하지 않는다(디스크 98%).
+data:
+  root: /mnt/data/original/SEED
+  subjects: null
+  sessions: null
+  segment_length: 800
+  step: 800
+  patch_size: 200
+  norm: scale100
+  ea: true
+  ea_scope: session
+  ea_scale: 0.2
+  ea_trim: 0.05
+  ea_eps: 1.0e-06
+  ea_mode: diag
+labram:
+  repo_path: /home/kihyeonjoo/LaBraM
+  ckpt_path: /home/kihyeonjoo/LaBraM/checkpoints/labram-base.pth
+  model_name: labram_base_patch200_200
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 3
+  dim_feedforward: 512
+  dropout: 0.1
+  n_masked_ch: 5
+training:
+  batch_size: 32
+  lr: 0.0003
+  weight_decay: 0.01
+  epochs: 50
+  device: cuda
+  lambda_aux: 0.5
+  lambda_cos: 0.5
+  lambda_aux_init: 0.1
+  lambda_warmup_epochs: 10
+  log_every: 10
+  save_every: 10
+  checkpoint_dir: checkpoints_labram
+finetune:
+  pretrained_ckpt: checkpoints_labram/pretrain_epoch050.pt
+  skip_adapter_pretrain: true
+  n_classes: 3
+  device: cuda
+  verbose: true
+  eval_every_epoch: true
+  use_lora: false
+  batch_size: 64
+  lr: 0.0005
+  weight_decay: 0.05
+  epochs: 30       # SD 는 학습 창이 400~1200 개뿐이라 50 은 과하다.
+                   # 선택 epoch 이 30 에 몰리면 올린다.
+  warmup_epochs: 5
+  layer_decay: 0.65
+  clip_grad: 3.0
+  label_smoothing: 0.1
+  dropout: 0.0
+  lambda_asym: 0.0
+  lora_r: 8
+  lora_alpha: 16.0
+  lora_lr: 0.0002
+  sd_train_per_session: 9   # SEED 문헌: 세션별로 클립 1-9 학습 / 10-15 평가
+  sd_pool_sessions: false   # SEED 는 세션을 합치지 않고 세션별 결과를 평균한다
+  n_val_subjects: 2
+  amp: true
+  seeds: [0, 1, 2]
+  sd_val_frac: 0.2          # 학습 클립마다 뒤쪽 20% 창을 검증으로 (a2)
+  results_csv: results/a02_sd.csv

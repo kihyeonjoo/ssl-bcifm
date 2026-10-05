@@ -1,0 +1,138 @@
+section,item,reported,actual,source,verdict,note
+5.6,사다리 +EA 60초,0.606,0.6060,final_ladder.npz,일치,
+5.6,사다리 +중심화 60초,0.6785,0.6785,final_ladder.npz,일치,
+5.6,사다리 +시간가중 60초,0.6862,0.6862,final_ladder.npz,일치,
+5.6,사다리 +EA 120초,0.6255,0.6255,final_ladder.npz,일치,
+5.6,사다리 +중심화 120초,0.6951,0.6951,final_ladder.npz,일치,
+5.6,사다리 +시간가중 120초,0.7026,0.7026,final_ladder.npz,일치,
+5.6,사다리 +EA 11분,0.6291,0.6291,final_ladder.npz,일치,
+5.6,사다리 +중심화 11분,0.7262,0.7262,final_ladder.npz,일치,
+5.6,사다리 +시간가중 11분,0.7336,0.7336,final_ladder.npz,일치,
+5.4,EA없음 조건1 clip,0.585,0.5852,ea_x_centering.npz,일치,
+5.4,EA없음 조건4 clip,0.711,0.7111,ea_x_centering.npz,일치,
+5.4,EA있음 조건1 clip,0.634,0.6336,ea_x_centering.npz,일치,
+5.4,EA있음 조건4 clip,0.759,0.7590,ea_x_centering.npz,일치,
+5.4,중심화 이득 EA없음,0.126,0.1259,ea_x_centering.npz,일치,
+5.4,중심화 이득 EA있음,0.125,0.1254,ea_x_centering.npz,일치,
+5.4,EA 효과 (중심화 없음),0.048,0.0484,ea_x_centering.npz,일치,
+5.4,EA 효과 (중심화 있음),0.048,0.0479,ea_x_centering.npz,일치,
+5.4,도메인간 분산 EA없음,0.172,0.1724,ea_x_centering.npz,일치,
+5.4,도메인간 분산 EA있음,0.15,0.1495,ea_x_centering.npz,일치,
+5.4,도메인간 분산 p,0.52,0.5245,ea_x_centering.npz,일치,
+5.2,교차 prototype 학습,0.9612,0.9612,ea_transfer.npz,일치,
+5.2,교차 prototype 검증,0.7988,0.7988,ea_transfer.npz,일치,
+5.2,교차 prototype 테스트,0.7551,0.7551,ea_transfer.npz,일치,
+5.4,전이 격차 차이,-0.009,-0.0094,ea_transfer.npz,일치,
+5.4,전이 격차 p,0.32,0.3149,ea_transfer.npz,일치,
+5.4,자기 도메인 판별력 차이,0.032,0.0316,ea_transfer.npz,일치,
+5.4,자기 도메인 판별력 p,0.036,0.0355,ea_transfer.npz,일치,
+5.5,구간 정확도 0-20초,0.515,0.5150,timecourse.npz,일치,
+5.5,구간 정확도 20-40초,0.59,0.5896,timecourse.npz,일치,
+5.5,구간 정확도 40-80초,0.61,0.6099,timecourse.npz,일치,
+5.5,구간 정확도 80-160초,0.638,0.6380,timecourse.npz,일치,
+5.5,구간 정확도 160-끝초,0.687,0.6866,timecourse.npz,일치,
+5.5,클래스 여백 첫 구간,0.475,0.4749,timecourse.npz,일치,
+5.5,클래스 여백 마지막 구간,0.935,0.9352,timecourse.npz,일치,
+5.5,시청40초 앞20초 버리기 clip,-0.006,-0.0064,timecourse.npz,일치,
+5.5,시청40초 앞20초 버리기 p,0.025,0.0253,timecourse.npz,일치,
+5.5,감정당 클립수 1~4 차이 <=0.004,0.004,0.0019,calib_diversity.npz,일치,실제 0.0019 (주장 <= 0.004)
+5.7,M2 window Tfull,0.005,0.0047,m2_ea_spread.npz,일치,
+5.7,adaBN window Tfull,0.005,0.0004,m2_ea_spread.npz,일치,
+5.7,LA window Tfull,0.005,0.0004,m2_ea_spread.npz,일치,
+5.7,T3A window Tfull,0.005,0.0036,m2_ea_spread.npz,일치,
+5.7,M1 균형 3클립 window,-0.005,-0.0050,m1_ea.npz,일치,
+5.7,M1 온라인 첫 1.1분,0.165,0.1650,m1_ea.npz,일치,
+5.7,확신도 가중 trans,-0.051,-0.0509,evidence.npz,일치,
+5.7,확신도 가중 T20,-0.043,-0.0431,evidence.npz,일치,
+5.7,‖P‖/‖δ‖ 균등,1.75,1.7520,trainweight2.npz,일치,
+5.7,‖P‖/‖δ‖ 범위 1.75~2,,1.8246,trainweight2.npz,일치,실제 1.8246 (주장 1.75~2.0)
+5.1,A팔 window,0.588,0.5881,s0_diag_a02.csv,일치,
+5.1,A팔 window sd,0.08,0.0799,s0_diag_a02.csv,일치,
+5.1,A팔 clip,0.634,0.6336,s0_diag_a02.csv,일치,
+5.1,A팔 clip sd,0.112,0.1123,s0_diag_a02.csv,일치,
+5.1,시드 sd window 평균,0.028,0.0284,s0_diag_a02.csv,일치,
+5.1,시드 sd window 최대,0.107,0.1070,s0_diag_a02.csv,일치,
+5.1,선택 에폭 중앙값,7,7.0000,s0_diag_a02.csv,일치,
+5.1,45회 중 1~2 에폭,7,7.0000,s0_diag_a02.csv,일치,
+5.1,짝차이 sd,0.0496,0.0496,"S0_REPORT.md (원 계산값, 재산출 불가)",일치,
+5.1,최소 감지 효과,0.0386,0.0386,S0_REPORT.md (t분포 df=14 재계산),일치,
+5.3,조건1 clip,0.6336,0.6336,centering_analysis.npz,일치,
+5.3,조건2 clip,0.718,0.7180,centering_analysis.npz,일치,
+5.3,조건3 clip,0.6385,0.6385,centering_analysis.npz,일치,
+5.3,조건4 clip,0.759,0.7590,centering_analysis.npz,일치,
+5.3,결정규칙만 (3-1),0.005,0.0049,centering_analysis.npz,일치,
+5.3,중심화 (2-1) clip,0.084,0.0844,centering_analysis.npz,일치,
+5.3,중심화 (4-3) clip,0.121,0.1205,centering_analysis.npz,일치,
+5.3,중심화 window (2-1) [주장 0.040~0.043],,0.0402,centering_analysis.npz,일치,실제 0.0402 (주장 0.04~0.043)
+5.3,중심화 window (4-3) [주장 0.040~0.043],,0.0410,centering_analysis.npz,일치,실제 0.0410 (주장 0.04~0.043)
+5.2,자기 도메인 상한 (피험자 LOCO),0.7802,0.7802,centering_analysis.npz,일치,
+5.2,라벨 44클립 로지스틱,0.846,0.8464,centering_analysis.npz,일치,
+5.2,로지스틱 격차 (상한-조건4),0.087,0.0874,centering_analysis.npz,일치,
+5.2,피험자 LOCO 격차,0.021,0.0212,centering_analysis.npz,일치,
+5.3,fine-tuned 도메인간 분산,0.15,0.1495,centering_mechanism.npz,일치,
+5.3,프로브 피험자 RBF 중심화,0.834,0.8342,centering_limits.npz,일치,
+5.3,프로브 피험자 RBF 원본,0.95,0.9498,centering_limits.npz,일치,
+5.3,프로브 공분산 중심화,0.863,0.8631,centering_limits.npz,일치,
+5.3,프로브 공분산 원본,0.864,0.8641,centering_limits.npz,일치,
+5.3,프로브 감정 중심화,0.943,0.9427,centering_limits.npz,일치,
+5.3,화이트닝 검증 선택 vs 중심화만,-0.002,-0.0020,centering_limits.npz + centering_analysis.npz,일치,
+5.7,화이트닝 선택 편향 (oracle-검증),0.024,0.0242,centering_limits.npz,일치,
+5.3,차원별 std 이득,0.006,0.0064,centering_limits.npz,일치,
+5.5,L2 시청20초 clip 하락,-0.0098,-0.0098,labelcalib.npz,일치,
+5.5,L2 시청20초 p,0.03,0.0309,labelcalib.npz,일치,
+5.5,L3 회수율 11분 (<5%),5.0,4.9345,labelcalib.npz,일치,실제 4.9345 (주장 <= 5.0)
+5.7,실험D 조건2 대비,0.024,0.0237,experiment_d.npz,일치,
+5.7,head 재학습 자체 (대조군1-조건1),0.01,0.0104,experiment_d.npz,일치,
+5.7,실험D 조건4 대비 이긴 수,3,3.0000,experiment_d.npz,일치,
+4장,피험자·감정당 창 수,842,842.0000,cache_ft/S1_seed0.npz,일치,
+4장,피험자·감정당 클립 수,15,15.0000,프로토콜 정의 (3세션 x 5클립),일치,
+5.3,S6 조건1->조건4 clip,,0.4444 -> 0.7037,centering_analysis.npz,원 값 제시,
+5.3,S10 조건1->조건4 clip,,0.5185 -> 0.7778,centering_analysis.npz,원 값 제시,
+5.3,프로브 피험자 선형 원본,0.972,0.9718,centering_limits.npz,일치,
+5.3,프로브 피험자 선형 중심화,0.065,0.0645,centering_limits.npz,일치,
+5.3,프로브 감정 선형 원본,0.924,0.9240,centering_limits.npz,일치,
+5.4,피험자 6 EA 효과 clip,-0.104,-0.1037,ea_x_centering.npz,일치,
+5.5,단일감정 클래스0 vs 3클립,,-0.1048,calib_prefsprd_ea.npz,일치,실제 -0.1048 (주장 -0.16~-0.1)
+5.5,단일감정 클래스0 이긴 수 (0/15),0,0.0000,calib_prefsprd_ea.npz,일치,
+5.5,단일감정 클래스1 vs 3클립,,-0.1265,calib_prefsprd_ea.npz,일치,실제 -0.1265 (주장 -0.16~-0.1)
+5.5,단일감정 클래스1 이긴 수 (0/15),0,0.0000,calib_prefsprd_ea.npz,일치,
+5.5,단일감정 클래스2 vs 3클립,,-0.1558,calib_prefsprd_ea.npz,일치,실제 -0.1558 (주장 -0.16~-0.1)
+5.5,단일감정 클래스2 이긴 수 (0/15),0,0.0000,calib_prefsprd_ea.npz,일치,
+5.6,최종 window 60초,0.601,0.6012,final_ladder.npz,일치,
+5.6,최종 window 120초,0.614,0.6143,final_ladder.npz,일치,
+5.6,최종 window 11분,0.623,0.6231,final_ladder.npz,일치,
+5.6,head 경로 clip 60초,0.672,0.6717,final_ladder.npz,일치,
+5.6,head 경로 clip 120초,0.693,0.6928,final_ladder.npz,일치,
+5.6,head 경로 clip 11분,0.713,0.7130,final_ladder.npz,일치,
+5.6,EA없음 최종 clip 60초,0.672,0.6720,noea_ladder.npz,일치,
+5.6,EA없음 시간가중 이득 60초,,0.0047,noea_ladder.npz,일치,실제 0.0047 (주장 0.003~0.005)
+5.6,EA없음 최종 clip 120초,0.681,0.6808,noea_ladder.npz,일치,
+5.6,EA없음 시간가중 이득 120초,,0.0036,noea_ladder.npz,일치,실제 0.0036 (주장 0.003~0.005)
+5.6,EA없음 최종 clip 11분,0.699,0.6991,noea_ladder.npz,일치,
+5.6,EA없음 시간가중 이득 11분,,0.0031,noea_ladder.npz,일치,실제 0.0031 (주장 0.003~0.005)
+5.6,transductive 대비 11분 손실,0.025,0.0254,centering_analysis.npz + final_ladder.npz,일치,
+5.7,M2 회수율 (5~16%),,15.3707,m2_ea_spread.npz,일치,실제 15.3707 (주장 5.0~16.0)
+5.7,M2 회전 여지 (0.03~0.05),,0.0470,m2_ea_spread.npz,일치,실제 0.0470 (주장 0.03~0.05)
+초록,최종 clip 아무것도 없음,0.596,0.5964,noea_ladder.npz,일치,
+초록,최종 clip 시청 60초,0.686,0.6862,final_ladder.npz,일치,
+초록,최종 clip 약 11분,0.734,0.7336,final_ladder.npz,일치,
+초록,중심화 이득 범위 0.07~0.10 (최솟값),,0.0696,final_ladder.npz,일치,실제 0.0696 (주장 0.07~0.1)
+초록,중심화 이득 범위 0.07~0.10 (최댓값),,0.0971,final_ladder.npz,일치,실제 0.0971 (주장 0.07~0.1)
+초록,중심화 p <= 0.0004,0.0004,0.0004,final_ladder.npz,일치,실제 0.0004 (주장 <= 0.0004)
+초록,시간 가중 범위 0.007~0.008,,0.0077,final_ladder.npz,일치,실제 0.0077 (주장 0.007~0.008)
+초록,시간 가중 p <= 0.013,0.013,0.0132,final_ladder.npz,일치,실제 0.0132 (주장 <= 0.013)
+초록,우연 대비 배수 — 최종 clip 11분,,2.2009,final_ladder.npz,원 값 제시,
+초록,우연 대비 배수 — 최종 clip 60초,,2.0585,final_ladder.npz,원 값 제시,
+초록,우연 대비 배수 — 적응 없음 clip,,1.7891,noea_ladder.npz,원 값 제시,
+초록,우연 대비 배수 — 적응 없음 window,,1.6519,noea_ladder.npz,원 값 제시,
+5.1,과대평가 최대 (clip),0.058,0.0583,S0_REPORT.md 1회 실행 0.6919 + centering_analysis.npz,일치,
+초록,사전학습 분산 80% -> fine-tuned 15%,0.7969 / 0.15,(보고서에 기재됨),S7_EA_X_CENTERING.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.3,사전학습 4축에 90%,4축,(보고서에 기재됨),S7_EA_X_CENTERING.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.2,사전학습 학습 0.5693 / 테스트 0.5659,0.5693 / 0.5659,(보고서에 기재됨),S1_DIAGNOSIS.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.2,"학습/검증 간격 0.16, 검증/테스트 0.04",0.162 / 0.044,(보고서에 기재됨),S2_CENTERING.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.3,이득 vs 도메인 L2 거리 rho=+0.515 p=0.050,0.515 / 0.050,(보고서에 기재됨),S3_MECHANISM.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.5,세 감정 12초 vs 한 감정 224초 +0.059 13/15,+0.0591 13/15,(보고서에 기재됨),S8_TRANSFER_AND_CALIB.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.5,시청 20초 캘리브레이션 평균 정답 코사인 0.48,0.482,(보고서에 기재됨),S11_TIMECOURSE_AND_LABELS.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.7,여백 상관 클립 사이 0.55 / 클립 안 0.16,0.553 / 0.160,(보고서에 기재됨),S12_EVIDENCE_WEIGHTING.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+5.7,M1 온라인 첫 1분 +0.165 15/15,+0.1650 15/15,(보고서에 기재됨),S10_M1_M2.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조
+6장,과대평가 0.03~0.07,0.028 / 0.058,(보고서에 기재됨),S0_REPORT.md (본문 대조),일치(보고서 대조),캐시 재계산 아님 — 원 실행 기록과 대조

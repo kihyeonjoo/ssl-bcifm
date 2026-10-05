@@ -1,0 +1,79 @@
+# CAFT 시험 (2026-10-05, 사용자 승인) — 조건 ⓒ: 배치 안 즉석 중심화 + 사람 간 자극 시점 정렬 손실 (가중 0.5).  seedv_noea.yaml 에 caft 블록 · 중심화 평가 · 시드 0 · 출력 경로만 더했다.
+# SEED-V no-EA 팔.  configs/seedv_a02.yaml 에서 ea 스위치와 출력 경로만
+# 바꿨다 — 재학습 비교이므로 다른 축이 하나라도 다르면 EA 의 효과가 아니다.
+# ea_scope/ea_scale/ea_trim/ea_eps/ea_mode 는 ea=false 면 쓰이지 않지만
+# 지워 두면 두 설정의 diff 가 커져 나중에 비교가 어려워진다.
+data:
+  root: /mnt/data/original/SEED-V
+  loader: SEEDVRawDataset
+  subjects: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]   # SEED-V 는 16명 (기본값 15 로 떨어지면 안 된다)
+  sessions: [1, 2, 3]
+  segment_length: 800
+  step: 800
+  patch_size: 200
+  norm: scale100
+  ea: false
+  ea_scope: session
+  ea_scale: 0.2
+  ea_trim: 0.05
+  ea_eps: 1.0e-06
+  ea_mode: diag
+labram:
+  repo_path: /home/kihyeonjoo/LaBraM
+  ckpt_path: /home/kihyeonjoo/LaBraM/checkpoints/labram-base.pth
+  model_name: labram_base_patch200_200
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 3
+  dim_feedforward: 512
+  dropout: 0.1
+  n_masked_ch: 5
+training:
+  batch_size: 32
+  lr: 0.0003
+  weight_decay: 0.01
+  epochs: 50
+  device: cuda
+  lambda_aux: 0.5
+  lambda_cos: 0.5
+  lambda_aux_init: 0.1
+  lambda_warmup_epochs: 10
+  log_every: 10
+  save_every: 10
+  checkpoint_dir: checkpoints_labram
+finetune:
+  pretrained_ckpt: checkpoints_labram/pretrain_epoch050.pt
+  skip_adapter_pretrain: true
+  n_classes: 5
+  device: cuda
+  verbose: true
+  eval_every_epoch: true
+  use_lora: false
+  batch_size: 64
+  lr: 0.0005
+  weight_decay: 0.05
+  epochs: 50
+  warmup_epochs: 5
+  layer_decay: 0.65
+  clip_grad: 3.0
+  label_smoothing: 0.1
+  dropout: 0.0
+  lambda_asym: 0.0
+  lora_r: 8
+  lora_alpha: 16.0
+  lora_lr: 0.0002
+  sd_train_per_session: 9
+  n_val_subjects: 2
+  amp: true
+  seeds: [0]
+  save_logits: logits/caftc_seedv_noea_S{fold}_seed{seed}.npz
+  save_state: checkpoints_s0/caftc_seedv_noea_S{fold}_seed{seed}.pt
+  results_csv: results/caftc_seedv_noea.csv
+  # ── CAFT ──
+  caft: true
+  caft_subjects_per_batch: 4        # 같은 세션의 학습 피험자 4명
+  caft_windows_per_subject: 15      # 같은 (클립, 시점) 15곳 = 감정 5 × 3
+  caft_align: 0.5                  # 사람 간 자극 시점 정렬 손실 가중 (ⓑ 0, ⓒ 0.5)
+  domain_center: true               # 검증·시험 평가도 중심화해서 (CAFT 의 head 는 중심화된 입력을 배운다)
+  center_fresh_eval: true           # 평가 직전 현재 모델로 도메인 평균 (낡음 없음)

@@ -31,6 +31,7 @@ import torch
 from torch.utils.data import Dataset
 
 from data.preprocessing import BandSTFT, LEFT_IDX, RIGHT_IDX
+from data.seed_raw_dataset import _trial_no
 
 
 # Official SEED sentiment label sequence for the 15 film clips (1-indexed clip → label)
@@ -176,20 +177,25 @@ class SEEDDataset(Dataset):
     def _load_mat(self, path: str) -> None:
         mat = sio.loadmat(path, verify_compressed_data_integrity=False)
 
-        # Collect trial arrays: any (62, T) ndarray that is not a metadata key
-        trial_arrays: List[np.ndarray] = [
-            mat[k].astype(np.float32)
-            for k in sorted(mat.keys())
-            if not k.startswith("_")
-            and isinstance(mat[k], np.ndarray)
-            and mat[k].ndim == 2
-            and mat[k].shape[0] == 62
-        ]
+        # Collect trial keys: any (62, T) ndarray that is not a metadata key.
+        # Sort by the NUMERIC clip index — a lexicographic sorted() orders
+        # ``..._eeg10`` right after ``..._eeg1`` and shifts the label sequence.
+        eeg_keys = sorted(
+            (
+                k for k in mat.keys()
+                if not k.startswith("_")
+                and isinstance(mat[k], np.ndarray)
+                and mat[k].ndim == 2
+                and mat[k].shape[0] == 62
+            ),
+            key=_trial_no,
+        )
 
-        for trial_idx, eeg in enumerate(trial_arrays):
-            raw_label = _SEED_LABEL_SEQ[trial_idx % len(_SEED_LABEL_SEQ)]
+        for k in eeg_keys:
+            clip = _trial_no(k)                            # 1-indexed film clip
+            raw_label = _SEED_LABEL_SEQ[clip - 1]
             label = raw_label + 1 if self.remap_labels else raw_label  # −1/0/1 → 0/1/2
-            self._slice_trial(eeg, label)
+            self._slice_trial(mat[k].astype(np.float32), label)
             self._trial_counter += 1
 
     def _slice_trial(self, eeg: np.ndarray, label: int) -> None:
