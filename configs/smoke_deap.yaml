@@ -1,0 +1,70 @@
+# DEAP 스모크 (1 epoch, 4명) — 경로·저장·CSV 확인용.  결과는 smoke_ 접두사로만 쓴다.
+# configs/seediv_noea.yaml 에서 데이터 경로·로더·피험자·세션·시드·출력 경로만 바꿨다.
+# 학습 축(epoch, lr, layer decay, 시드, 검증 피험자 2명 등)은 SEED·SEED-V 와 같다.
+data:
+  root: /mnt/data/original/DEAP
+  loader: DEAPRawDataset
+  subjects: [1, 2, 3, 4]
+  sessions: [1]                 # DEAP 는 한 세션
+  segment_length: 800
+  step: 800
+  patch_size: 200
+  norm: scale100
+  ea: false
+  ea_scope: session
+  ea_scale: 0.2
+  ea_trim: 0.05
+  ea_eps: 1.0e-06
+  ea_mode: diag
+labram:
+  repo_path: /home/kihyeonjoo/LaBraM
+  ckpt_path: /home/kihyeonjoo/LaBraM/checkpoints/labram-base.pth
+  model_name: labram_base_patch200_200
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 3
+  dim_feedforward: 512
+  dropout: 0.1
+  n_masked_ch: 5
+training:
+  batch_size: 32
+  lr: 0.0003
+  weight_decay: 0.01
+  epochs: 1
+  device: cuda
+  lambda_aux: 0.5
+  lambda_cos: 0.5
+  lambda_aux_init: 0.1
+  lambda_warmup_epochs: 10
+  log_every: 10
+  save_every: 10
+  checkpoint_dir: checkpoints_labram
+finetune:
+  pretrained_ckpt: checkpoints_labram/pretrain_epoch050.pt
+  skip_adapter_pretrain: true
+  n_classes: 4
+  device: cuda
+  verbose: true
+  eval_every_epoch: true
+  use_lora: false
+  batch_size: 64
+  lr: 0.0005
+  weight_decay: 0.05
+  epochs: 1
+  warmup_epochs: 0
+  layer_decay: 0.65
+  clip_grad: 3.0
+  label_smoothing: 0.1
+  dropout: 0.0
+  lambda_asym: 0.0
+  lora_r: 8
+  lora_alpha: 16.0
+  lora_lr: 0.0002
+  sd_train_per_session: 9
+  n_val_subjects: 2
+  amp: true
+  seeds: [0]                      # 사용자 결정: 시드 1개
+  save_logits: logits/smoke_deap_S{fold}_seed{seed}.npz
+  save_state: checkpoints_s0/smoke_deap_S{fold}_seed{seed}.pt
+  results_csv: results/smoke_deap.csv

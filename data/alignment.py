@@ -110,18 +110,34 @@ class EuclideanAligner:
         trim: float = 0.05,
         eps: float = 1e-6,
         scale: float = 1.0,
+        mode: str = "full",
     ) -> None:
+        """
+        mode : 'full' — R̄^(-1/2): equalise channel amplitudes AND decorrelate
+                        channels (the published EA).
+               'diag' — diag(R̄)^(-1/2): equalise each channel's amplitude
+                        only; the spatial correlation structure is kept.
+        Comparing the two splits EA's gain into "per-subject amplitude
+        calibration" versus "spatial decorrelation".
+        """
+        if mode not in ("full", "diag"):
+            raise ValueError(f"mode must be full|diag, got {mode!r}")
         self.trim = trim
         self.eps = eps
         self.scale = scale
+        self.mode = mode
         self.transforms: Dict[Hashable, np.ndarray] = {}
 
     def fit(self, groups: Dict[Hashable, List[np.ndarray]]) -> "EuclideanAligner":
         for key, segs in groups.items():
             R = mean_covariance(segs, trim=self.trim)
-            self.transforms[key] = (
-                self.scale * inverse_sqrt(R, eps=self.eps)
-            ).astype(np.float32)
+            if self.mode == "diag":
+                d = np.diag(R).astype(np.float64)
+                d = np.maximum(d, self.eps * max(float(d.max()), 1e-12))
+                W = np.diag(d ** -0.5)
+            else:
+                W = inverse_sqrt(R, eps=self.eps)
+            self.transforms[key] = (self.scale * W).astype(np.float32)
         return self
 
     def apply(self, key: Hashable, X: np.ndarray) -> np.ndarray:

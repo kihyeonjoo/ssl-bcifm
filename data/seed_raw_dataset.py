@@ -17,6 +17,8 @@ import re
 import warnings
 from typing import Dict, List, Optional, Tuple
 
+from collections import defaultdict
+
 import numpy as np
 import scipy.io as sio
 import torch
@@ -103,6 +105,9 @@ class SEEDRawDataset(Dataset):
     ea_eps          : float — eigenvalue floor, relative to the largest
     """
 
+    # Subject count of the dataset; SEED-V overrides it with 16.
+    n_subjects: int = 15
+
     FS: int = 200
 
     def __init__(
@@ -120,6 +125,7 @@ class SEEDRawDataset(Dataset):
         ea_scale: float = 0.2,
         ea_trim: float = 0.05,
         ea_eps: float = 1e-6,
+        ea_mode: str = "full",
     ) -> None:
         super().__init__()
         assert segment_length % patch_size == 0, (
@@ -148,7 +154,10 @@ class SEEDRawDataset(Dataset):
         self._seg_meta: List[Tuple[int, int, int]] = []   # (subject, session, clip 1..15)
         self._trial_to_indices: Dict[int, List[int]] = {}
         self._trial_counter: int = 0
-        self._load(subjects or list(range(1, 16)), sessions or [1, 2, 3])
+        self._load(
+            subjects or list(range(1, self.n_subjects + 1)),
+            sessions or [1, 2, 3],
+        )
 
         if ea_scope not in ("session", "subject"):
             raise ValueError(f"ea_scope must be session|subject, got {ea_scope!r}")
@@ -165,6 +174,7 @@ class SEEDRawDataset(Dataset):
         self._aligner: Optional[EuclideanAligner] = None
         self._seg_group: List[tuple] = []
         if ea:
+            self.ea_mode = ea_mode
             self._fit_alignment(ea_scale, ea_trim, ea_eps)
 
     # ── public ─────────────────────────────────────────────────────────
@@ -202,6 +212,66 @@ class SEEDRawDataset(Dataset):
         test_idx  = [i for i, c in enumerate(self.clips_of) if c >  n_train_clips]
         return train_idx, test_idx
 
+    def sd_folds(self, n_folds: int = 3):
+        """Clip-wise k-fold split for the subject-dependent protocol.
+
+        Clips are cut into ``n_folds`` contiguous blocks of equal size, which
+        is SEED-V's official 3-fold design: with 15 clips per session the
+        blocks are 1-5, 6-10, 11-15 and **each block holds exactly one clip
+        per emotion** (verified on the data for all 3 sessions).  SEED's
+        official protocol is the single 9/6 cut in ``sd_split`` instead, so
+        this is not a drop-in replacement for it.
+
+        Returns ``[(train_idx, test_idx), ...]``, one pair per fold.
+        """
+        clips = sorted(set(self.clips_of))
+        if len(clips) % n_folds:
+            raise ValueError(
+                f"{len(clips)} clips do not divide into {n_folds} folds; an "
+                f"uneven split would put different class counts in each fold"
+            )
+        per = len(clips) // n_folds
+        blocks = [set(clips[f * per:(f + 1) * per]) for f in range(n_folds)]
+        out = []
+        for te in blocks:
+            tr_idx = [i for i, c in enumerate(self.clips_of) if c not in te]
+            te_idx = [i for i, c in enumerate(self.clips_of) if c in te]
+            out.append((tr_idx, te_idx))
+        return out
+
+    def sd_val_split(self, train_idx, frac: float = 0.2):
+        """Split ``train_idx`` into (train, val) by taking each clip's TAIL.
+
+        The subject-dependent protocol trains and tests inside one
+        (subject, session), so there is no held-out subject to validate on the
+        way the LOSO path does (``n_val_subjects``).  The two remaining options
+        are to hold out whole clips — which on SEED-V's 3-fold split leaves
+        only one clip per emotion to train on — or to hold out part of every
+        training clip, which is what this does.
+
+        Windows are appended in time order inside a clip (``_add_segments``
+        strides forward), so the last ``frac`` of each clip's indices is its
+        final seconds.  Validation is therefore correlated with training and
+        must be described as such: it is used ONLY to pick the epoch, and the
+        test clips are untouched.  Windows do not overlap
+        (``step == segment_length``), so train and val are distinct samples.
+        """
+        if not 0.0 < frac < 1.0:
+            raise ValueError(f"frac must be in (0, 1), got {frac}")
+        by = defaultdict(list)
+        for i in train_idx:                      # train_idx is time-ordered
+            by[self._seg_meta[i]].append(i)
+        tr, va = [], []
+        for key in sorted(by):
+            idx = by[key]
+            n_va = int(round(len(idx) * frac))
+            # Every clip must keep at least one window on each side, or a short
+            # clip silently contributes nothing to one of the two sets.
+            n_va = min(max(n_va, 1), len(idx) - 1) if len(idx) > 1 else 0
+            tr.extend(idx[:len(idx) - n_va])
+            va.extend(idx[len(idx) - n_va:])
+        return sorted(tr), sorted(va)
+
     def __len__(self) -> int:
         return len(self._segments)
 
@@ -229,9 +299,18 @@ class SEEDRawDataset(Dataset):
         # Reshape into (n_channels, n_patches, patch_size)
         eeg = eeg.reshape(self.n_channels, self.n_patches, self.patch_size)
 
+        subj, sess, clip = self._seg_meta[idx]
         return {
-            "eeg":   eeg,
-            "label": torch.tensor(label, dtype=torch.long),
+            "eeg":     eeg,
+            "label":   torch.tensor(label, dtype=torch.long),
+            # Provenance travels with the batch so an adversarial head can use
+            # it.  Harmless for models that ignore it.  ``clip`` is here so a
+            # loss can treat one film clip as the unit: the ~56 windows inside
+            # a clip share a label and are strongly correlated, so counting
+            # them as independent samples overstates the sample size ~50x.
+            "subject": torch.tensor(subj, dtype=torch.long),
+            "session": torch.tensor(sess, dtype=torch.long),
+            "clip":    torch.tensor(clip, dtype=torch.long),
         }
 
     # ── Euclidean Alignment ────────────────────────────────────────────
@@ -254,7 +333,85 @@ class SEEDRawDataset(Dataset):
             self._seg_group.append(key)
             groups.setdefault(key, []).append(seg)
 
-        self._aligner = EuclideanAligner(trim=trim, eps=eps, scale=scale).fit(groups)
+        self._aligner = EuclideanAligner(
+            trim=trim, eps=eps, scale=scale,
+            mode=getattr(self, "ea_mode", "full"),
+        ).fit(groups)
+
+    def refit_alignment_limited(self, seconds: float, *, how: str = "prefix",
+                                seed: int = 0, scale: float = 0.2,
+                                trim: float = 0.05, eps: float = 1e-6):
+        """Refit EA from only ``seconds`` of each group, and say what is left.
+
+        EA as published needs the whole recording before it can transform
+        anything, which is the reason it counts as transductive.  A deployed
+        system would instead record a short calibration and start.  This refits
+        each group's transform from that much data and returns the indices of
+        the segments NOT used for it — scoring on the calibration data itself
+        would flatter the result.
+
+        how : 'prefix' — the first N seconds, i.e. what a session actually
+                         starts with (one film clip, so one emotion: realistic
+                         but the covariance is estimated under a single state)
+              'random' — N seconds drawn from across the recording, an upper
+                         bound that no real calibration can reach
+        """
+        if self._aligner is None:
+            raise RuntimeError("refit_alignment_limited requires ea=True")
+        n_seg = max(1, int(round(seconds * self.FS / self.segment_length)))
+        rng = np.random.default_rng(seed)
+
+        by_group: Dict[tuple, List[int]] = {}
+        for i, key in enumerate(self._seg_group):
+            by_group.setdefault(key, []).append(i)
+
+        groups, keep = {}, []
+        for key, idx in by_group.items():
+            if how == "prefix":
+                calib = idx[:n_seg]
+            elif how == "random":
+                take = rng.choice(len(idx), size=min(n_seg, len(idx)), replace=False)
+                calib = [idx[t] for t in sorted(take)]
+            else:
+                raise ValueError(f"how must be prefix|random, got {how!r}")
+            calib_set = set(calib)
+            groups[key] = [self._segments[i][0] for i in calib]
+            keep.extend(i for i in idx if i not in calib_set)
+
+        self._aligner = EuclideanAligner(
+            trim=trim, eps=eps, scale=scale,
+            mode=getattr(self, "ea_mode", "full"),
+        ).fit(groups)
+        return sorted(keep), n_seg
+
+    def refit_alignment_explicit(self, calib_by_group, *, scale: float = 0.2,
+                                 trim: float = 0.05, eps: float = 1e-6):
+        """Refit EA using exactly the segments named per group.
+
+        ``refit_alignment_limited`` only knows 'first N seconds' and 'N seconds
+        at random'.  A calibration PROTOCOL picks whole clips by emotion, so the
+        caller has to be able to hand over the segment indices it chose.
+
+        calib_by_group : {group_key: [global segment index, ...]}
+        Every group of this dataset must appear, or a missing group would
+        silently keep its full-session transform and the run would mix
+        transductive and realistic EA.
+        """
+        if self._aligner is None:
+            raise RuntimeError("refit_alignment_explicit requires ea=True")
+        missing = set(self._seg_group) - set(calib_by_group)
+        if missing:
+            raise ValueError(f"no calibration segments given for {sorted(missing)}")
+        groups = {}
+        for key, idx in calib_by_group.items():
+            if len(idx) == 0:
+                raise ValueError(f"empty calibration set for group {key!r}")
+            groups[key] = [self._segments[i][0] for i in idx]
+        self._aligner = EuclideanAligner(
+            trim=trim, eps=eps, scale=scale,
+            mode=getattr(self, "ea_mode", "full"),
+        ).fit(groups)
+        return self
 
     def alignment_report(self):
         """Per-group whitening diagnostics; see EuclideanAligner.report."""

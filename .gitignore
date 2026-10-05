@@ -36,3 +36,12 @@ venv/
 # Throwaway smoke and gate configs (generated ad hoc)
 configs/*_smoke.yaml
 configs/seed_labram_gate.yaml
+_trash
+
+# Feature caches (regenerate from checkpoints / raw data — not for git)
+cache_*/
+cache_de.npz
+
+# Prediction logits and archived old runs (regenerable)
+logits/
+archive/

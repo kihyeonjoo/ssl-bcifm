@@ -47,7 +47,9 @@ from sklearn.metrics import accuracy_score, f1_score
 import yaml
 
 from data.seed_raw_dataset import SEEDRawDataset, SEED_CH_NAMES, SD_TRAIN_CLIPS
-from data.preprocessing import LEFT_IDX, RIGHT_IDX, LEFT_CH, RIGHT_CH
+from data.preprocessing import (
+    LEFT_IDX, RIGHT_IDX, LEFT_CH, RIGHT_CH, MIDLINE_CH, SEED_CH_NAMES,
+)
 
 
 # ── LaBraM hemisphere wrapper ───────────────────────────────────────────────
@@ -82,6 +84,52 @@ def _get_input_chans(ch_names):
     return [0] + [_LABRAM_1020.index(ch) + 1 for ch in ch_names]
 
 
+# Midline electrodes, in the dataset's channel order.  They sit on the mirror
+# axis and have no contralateral partner.
+MIDLINE_ORDERED = [c for c in SEED_CH_NAMES if c in MIDLINE_CH]
+_CH_TO_IDX = {c: i for i, c in enumerate(SEED_CH_NAMES)}
+MIDLINE_IDX = [_CH_TO_IDX[c] for c in MIDLINE_ORDERED]
+
+
+def build_hemisphere_inputs(include_midline: bool = True, mirror: bool = True):
+    """Channel indices and LaBraM position ids for the two hemisphere passes.
+
+    ``include_midline`` appends FPZ..OZ to BOTH passes.  Those 8 electrodes are
+    13% of the montage and carry frontal-midline theta (FZ/FCZ/CZ) and the
+    visual response to the film stimuli (PZ/POZ/OZ), so dropping them for want
+    of a mirror partner is a real loss.  Feeding them to both sides keeps them
+    in z_L and z_R while they cancel in z_L - z_R — which is what the
+    hypothesis wants of a bilaterally common signal.
+
+    ``mirror`` presents the right hemisphere at its LEFT counterpart's position
+    ids (FP2 -> FP1's slot).  LaBraM adds a learned per-electrode position
+    embedding, so without this the two passes are not the same function of
+    their input and the common-mode terms cannot cancel cleanly.  Midline
+    electrodes map to themselves and are unaffected.
+
+    Returns
+    -------
+    (left_idx, left_chans), (right_idx, right_chans)
+        ``*_idx``   : dataset channel indices, for index_select on the EEG
+        ``*_chans`` : LaBraM ``input_chans`` (CLS + electrode position ids)
+    """
+    l_names = list(LEFT_CH)
+    r_names = list(RIGHT_CH)
+    l_idx = list(LEFT_IDX)
+    r_idx = list(RIGHT_IDX)
+
+    # position ids the right pass is presented at
+    r_pos_names = l_names if mirror else r_names
+
+    if include_midline:
+        l_names = l_names + MIDLINE_ORDERED
+        r_pos_names = r_pos_names + MIDLINE_ORDERED
+        l_idx = l_idx + MIDLINE_IDX
+        r_idx = r_idx + MIDLINE_IDX
+
+    return (l_idx, _get_input_chans(l_names)), (r_idx, _get_input_chans(r_pos_names))
+
+
 class HemiLaBraMClassifier(nn.Module):
     """LaBraM called per-hemisphere with shared weights + LoRA + fusion head.
 
@@ -101,8 +149,25 @@ class HemiLaBraMClassifier(nn.Module):
         dropout: float = 0.2,
         lora_r: int = 8,
         lora_alpha: float = 16.0,
+        include_midline: bool = True,
+        mirror_right: bool = True,
+        fusion: str = "full",
+        single_pass: bool = False,
     ) -> None:
         super().__init__()
+        if fusion not in ("full", "diff", "cat"):
+            raise ValueError(f"fusion must be full|diff|cat, got {fusion!r}")
+        self.fusion = fusion
+        self.include_midline = include_midline
+        self.mirror_right = mirror_right
+        self.single_pass = single_pass
+        if single_pass and mirror_right:
+            # One pass sees the true montage, so there is no second pass to
+            # align and nothing to mirror.  Silently keeping the flag on would
+            # suggest an ablation that is not running.
+            raise ValueError(
+                "single_pass=True has no second forward pass, so mirror_right "
+                "is meaningless. Set mirror_right: false in the config.")
         _register_labram(labram_repo)
 
         import modeling_finetune  # noqa
@@ -159,20 +224,40 @@ class HemiLaBraMClassifier(nn.Module):
             f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)"
         )
 
-        # Precompute channel indices for left/right hemispheres
-        self.left_input_chans = _get_input_chans(LEFT_CH)
-        self.right_input_chans = _get_input_chans(RIGHT_CH)
-
-        # Store channel-to-index for raw EEG slicing
+        # Hemisphere inputs: optional midline in both passes, optional
+        # mirroring of the right pass onto left position ids.
+        (l_idx, l_chans), (r_idx, r_chans) = build_hemisphere_inputs(
+            include_midline=include_midline, mirror=mirror_right,
+        )
+        self.left_input_chans = l_chans
+        self.right_input_chans = r_chans
         self.register_buffer(
-            "left_idx", torch.tensor(LEFT_IDX, dtype=torch.long), persistent=False,
+            "left_idx", torch.tensor(l_idx, dtype=torch.long), persistent=False,
         )
         self.register_buffer(
-            "right_idx", torch.tensor(RIGHT_IDX, dtype=torch.long), persistent=False,
+            "right_idx", torch.tensor(r_idx, dtype=torch.long), persistent=False,
         )
+        # Single-pass needs the full montage's position ids once.
+        self.register_buffer(
+            "all_input_chans",
+            torch.tensor(_get_input_chans(SEED_CH_NAMES), dtype=torch.long),
+            persistent=False,
+        )
+        if single_pass:
+            print(f"[Hemi] single pass over {len(SEED_CH_NAMES)}ch, split at tokens  "
+                  f"(L={len(l_idx)}ch, R={len(r_idx)}ch, "
+                  f"midline={'in both' if include_midline else 'out'})  "
+                  f"fusion={fusion}")
+        else:
+            print(f"[Hemi] {len(l_idx)}ch per pass  "
+                  f"(midline={'in' if include_midline else 'out'}, "
+                  f"mirror={'on' if mirror_right else 'off'})  fusion={fusion}")
 
-        # Fusion head: [z_L; z_R; z_L-z_R; z_L⊙z_R] → 4 * d_model
-        fusion_dim = 4 * d_model
+        # Fusion head input depends on which asymmetry terms are exposed.
+        #   full : [z_L ; z_R ; z_L-z_R ; z_L⊙z_R]   — proposed
+        #   diff : [z_L-z_R]                          — asymmetry ONLY
+        #   cat  : [z_L ; z_R]                        — control, no explicit asymmetry
+        fusion_dim = {"full": 4, "diff": 1, "cat": 2}[fusion] * d_model
         self.head = nn.Sequential(
             nn.LayerNorm(fusion_dim),
             nn.Linear(fusion_dim, d_model),
@@ -193,6 +278,31 @@ class HemiLaBraMClassifier(nn.Module):
         )
         return cls  # (B, embed_dim)
 
+    def _encode_single_pass(self, eeg: torch.Tensor):
+        """All 62 channels in ONE pass; split into hemispheres at the tokens.
+
+        The two-pass design pays for the asymmetry term with a channel split:
+        attention can no longer cross the midline, and a 35-channel montage is
+        not what the backbone was pretrained on.  Here LaBraM sees the whole
+        montage, and z_L / z_R are pooled from its per-channel patch tokens
+        afterwards — the difference term comes for free, at half the compute,
+        and there is no mirroring to distort the spatial embedding.
+
+        ``return_patch_tokens=True`` yields (B, C*P, D).  LaBraM's TemporalConv
+        flattens ``B N A T -> B (N A) T``, i.e. channel-major, so a view of
+        (B, C, P, D) recovers the channel axis.
+        """
+        tok = self.labram.forward_features(
+            eeg, input_chans=self.all_input_chans,
+            return_patch_tokens=True, return_all_tokens=False,
+        )                                                # (B, C*P, D)
+        B, CP, D = tok.shape
+        C = eeg.shape[1]
+        tok = tok.view(B, C, CP // C, D).mean(2)         # (B, C, D) pool over patches
+        z_L = tok.index_select(1, self.left_idx).mean(1)
+        z_R = tok.index_select(1, self.right_idx).mean(1)
+        return z_L, z_R
+
     def forward(self, eeg: torch.Tensor) -> torch.Tensor:
         """
         Parameters
@@ -203,19 +313,25 @@ class HemiLaBraMClassifier(nn.Module):
         -------
         logits : (B, n_classes)
         """
-        # Split hemispheres from raw EEG
-        eeg_L = eeg.index_select(1, self.left_idx)    # (B, 27, P, 200)
-        eeg_R = eeg.index_select(1, self.right_idx)   # (B, 27, P, 200)
+        if self.single_pass:
+            z_L, z_R = self._encode_single_pass(eeg)
+        else:
+            # Split hemispheres from raw EEG
+            eeg_L = eeg.index_select(1, self.left_idx)    # (B, 27, P, 200)
+            eeg_R = eeg.index_select(1, self.right_idx)   # (B, 27, P, 200)
 
-        # Shared LaBraM + LoRA, called independently per hemisphere
-        z_L = self._encode_hemisphere(eeg_L, self.left_input_chans)   # (B, d)
-        z_R = self._encode_hemisphere(eeg_R, self.right_input_chans)  # (B, d)
+            # Shared LaBraM + LoRA, called independently per hemisphere
+            z_L = self._encode_hemisphere(eeg_L, self.left_input_chans)   # (B, d)
+            z_R = self._encode_hemisphere(eeg_R, self.right_input_chans)  # (B, d)
 
-        # 4-way asymmetry fusion
-        z_diff = z_L - z_R
-        z_prod = z_L * z_R
-        z_fused = torch.cat([z_L, z_R, z_diff, z_prod], dim=-1)  # (B, 4d)
-
+        if self.fusion == "diff":
+            z_fused = z_L - z_R                                   # (B, d)
+        elif self.fusion == "cat":
+            z_fused = torch.cat([z_L, z_R], dim=-1)               # (B, 2d)
+        else:
+            z_fused = torch.cat(
+                [z_L, z_R, z_L - z_R, z_L * z_R], dim=-1,         # (B, 4d)
+            )
         return self.head(z_fused)
 
 
@@ -235,7 +351,14 @@ def _evaluate(model, loader, device):
     return accuracy_score(y_true, y_pred), f1_score(y_true, y_pred, average="macro")
 
 
-def _train_and_eval(cfg, train_ds, test_ds, device):
+def _train_and_eval(cfg, train_ds, test_ds, device, val_ds=None):
+    """Train once and report test metrics.
+
+    With ``val_ds`` the reported numbers are the test metrics at the epoch with
+    the best VALIDATION macro-F1, so the test set never drives model
+    selection.  This must match the protocol used by the other scripts
+    (finetune_labram_hemi_aux.py) or the arms are not comparable.
+    """
     fc = cfg["finetune"]
     lc = cfg["labram"]
 
@@ -247,6 +370,10 @@ def _train_and_eval(cfg, train_ds, test_ds, device):
         test_ds, batch_size=fc["batch_size"],
         shuffle=False, num_workers=4, pin_memory=True,
     )
+    val_loader = None if val_ds is None else DataLoader(
+        val_ds, batch_size=fc["batch_size"],
+        shuffle=False, num_workers=4, pin_memory=True,
+    )
 
     model = HemiLaBraMClassifier(
         labram_repo=lc["repo_path"],
@@ -256,6 +383,10 @@ def _train_and_eval(cfg, train_ds, test_ds, device):
         dropout=fc["dropout"],
         lora_r=fc.get("lora_r", 8),
         lora_alpha=fc.get("lora_alpha", 16.0),
+        include_midline=fc.get("include_midline", True),
+        mirror_right=fc.get("mirror_right", True),
+        fusion=fc.get("fusion", "full"),
+        single_pass=fc.get("single_pass", False),
     ).to(device)
 
     # Param groups: LoRA params + head params
@@ -280,6 +411,8 @@ def _train_and_eval(cfg, train_ds, test_ds, device):
     verbose = fc.get("verbose", True)
     eval_every = fc.get("eval_every_epoch", False)
     best_acc, best_f1 = 0.0, 0.0
+    best_val_f1 = -1.0
+    sel = None            # (test_acc, test_f1, epoch) at the best val F1
 
     for epoch in range(total_epochs):
         model.train()
@@ -307,31 +440,55 @@ def _train_and_eval(cfg, train_ds, test_ds, device):
         train_loss = epoch_loss / max(n_total, 1)
         train_acc  = n_correct / max(n_total, 1)
 
+        # Model selection must not depend on `verbose`, so evaluate outside it.
+        lr_now = optimizer.param_groups[-1]["lr"]
+        msg = (
+            f"    epoch {epoch+1:>2}/{total_epochs}  "
+            f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
+            f"lr={lr_now:.2e}"
+        )
+        if val_loader is not None:
+            val_acc, val_f1 = _evaluate(model, val_loader, device)
+            te_acc, te_f1 = _evaluate(model, test_loader, device)
+            msg += f"  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
+            msg += f"  test_acc={te_acc:.4f}  test_f1={te_f1:.4f}"
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                sel = (te_acc, te_f1, epoch + 1)
+                msg += "  *"
+        elif eval_every:
+            eval_acc, eval_f1 = _evaluate(model, test_loader, device)
+            if eval_acc > best_acc:
+                best_acc, best_f1 = eval_acc, eval_f1
+            msg += f"  test_acc={eval_acc:.4f}  test_f1={eval_f1:.4f}"
+
         if verbose:
-            lr_now = optimizer.param_groups[-1]["lr"]
-            msg = (
-                f"    epoch {epoch+1:>2}/{total_epochs}  "
-                f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
-                f"lr={lr_now:.2e}"
-            )
-            if eval_every:
-                eval_acc, eval_f1 = _evaluate(model, test_loader, device)
-                if eval_acc > best_acc:
-                    best_acc, best_f1 = eval_acc, eval_f1
-                msg += f"  test_acc={eval_acc:.4f}  test_f1={eval_f1:.4f}"
             print(msg, flush=True)
 
     acc, f1 = _evaluate(model, test_loader, device)
+    if sel is not None:
+        te_acc, te_f1, ep = sel
+        return {
+            "accuracy": te_acc, "f1_macro": te_f1,       # test @ best-val epoch
+            "selected_epoch": ep, "val_f1": best_val_f1,
+            "final_accuracy": acc, "final_f1_macro": f1,
+            "best_accuracy": te_acc,
+        }
     return {"accuracy": acc, "f1_macro": f1, "best_accuracy": max(best_acc, acc)}
 
 
 # ── LOSO + Subject-dependent ────────────────────────────────────────────────
 
-def run_cv(cfg, mode, wandb_project):
+def run_cv(cfg, mode, wandb_project, folds=None):
     fc = cfg["finetune"]
     dc = cfg["data"]
     device = torch.device(fc["device"] if torch.cuda.is_available() else "cpu")
     all_subjects = dc.get("subjects") or list(range(1, 16))
+    # ``folds`` picks which subjects are held out as TEST; the train/val pool
+    # stays ``all_subjects`` so sharding across GPUs changes no fold's data.
+    fold_subjects = folds or all_subjects
+    unknown = [s for s in fold_subjects if s not in all_subjects]
+    assert not unknown, f"fold subjects not in subject pool: {unknown}"
 
     use_wandb = wandb_project is not None
     if use_wandb:
@@ -353,14 +510,35 @@ def run_cv(cfg, mode, wandb_project):
     )
 
     results = defaultdict(list)
-    for subj in all_subjects:
+    for subj in fold_subjects:
         t0 = time.time()
 
         if mode == "loso":
-            train_subjects = [s for s in all_subjects if s != subj]
+            pool = [s for s in all_subjects if s != subj]
+            n_val = fc.get("n_val_subjects", 2)
+            if n_val > 0 and len(pool) > n_val:
+                # Same deterministic rotation as finetune_labram_hemi_aux.py,
+                # so every arm sees an identical train/val/test split.
+                i = all_subjects.index(subj)
+                val_subjects = [
+                    all_subjects[(i + k) % len(all_subjects)]
+                    for k in range(1, n_val + 1)
+                ]
+                train_subjects = [s for s in pool if s not in val_subjects]
+            else:
+                val_subjects, train_subjects = [], pool
+
+            print(f"  train={train_subjects}  val={val_subjects}  test=[{subj}]",
+                  flush=True)
             train_ds = SEEDRawDataset(subjects=train_subjects, **ds_kwargs)
             test_ds  = SEEDRawDataset(subjects=[subj],         **ds_kwargs)
-            m = _train_and_eval(cfg, train_ds, test_ds, device)
+            val_ds   = (SEEDRawDataset(subjects=val_subjects, **ds_kwargs)
+                        if val_subjects else None)
+            m = _train_and_eval(cfg, train_ds, test_ds, device, val_ds=val_ds)
+            if "selected_epoch" in m:
+                print(f"  -> selected epoch {m['selected_epoch']} "
+                      f"(val_f1={m['val_f1']:.4f}); last-epoch test "
+                      f"acc={m['final_accuracy']:.4f}", flush=True)
 
         else:  # subject_dependent — within-session split
             # Standard SEED protocol: within each session,
@@ -420,7 +598,7 @@ def run_cv(cfg, mode, wandb_project):
     print(f"{'=' * 60}")
     print(f"\n{'Subject':>8}  {'Accuracy':>8}  {'F1':>8}")
     print("-" * 28)
-    for i, subj in enumerate(all_subjects):
+    for i, subj in enumerate(fold_subjects):
         print(f"{subj:>8}  {acc_arr[i]:>8.4f}  {f1_arr[i]:>8.4f}")
     print("-" * 28)
     print(f"{'Mean':>8}  {acc_arr.mean():>8.4f}  {f1_arr.mean():>8.4f}")
@@ -439,6 +617,8 @@ def main():
     parser = argparse.ArgumentParser(description="Hemisphere-aware LaBraM Fine-tuning")
     parser.add_argument("--config", type=str, default="configs/seed_labram.yaml")
     parser.add_argument("--wandb_project", type=str, default=None)
+    parser.add_argument("--folds", type=str, default=None,
+                        help="comma-separated TEST subjects, e.g. 1,2,3")
     parser.add_argument("--eval_mode", type=str, default="subject_dependent",
                         choices=["loso", "subject_dependent", "both"])
     args = parser.parse_args()
@@ -446,17 +626,20 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
+    folds = [int(x) for x in args.folds.split(",")] if args.folds else None
+
     if args.eval_mode in ("loso", "both"):
         print("\n" + "#" * 60)
-        print("#  Hemisphere LaBraM LOSO")
+        print(f"#  Hemisphere LaBraM LOSO"
+              f"{'  folds=' + str(folds) if folds else ''}")
         print("#" * 60)
-        run_cv(cfg, "loso", args.wandb_project)
+        run_cv(cfg, "loso", args.wandb_project, folds=folds)
 
     if args.eval_mode in ("subject_dependent", "both"):
         print("\n" + "#" * 60)
         print("#  Hemisphere LaBraM Subject-Dependent")
         print("#" * 60)
-        run_cv(cfg, "subject_dependent", args.wandb_project)
+        run_cv(cfg, "subject_dependent", args.wandb_project, folds=folds)
 
 
 if __name__ == "__main__":

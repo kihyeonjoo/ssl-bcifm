@@ -1,0 +1,74 @@
+# SEED-V subject-dependent.  configs/seedv_a02.yaml 에서 파생.
+# 문헌 방식(2026-10-03 확인): 클립 그룹 3폴드 x 세션 합침.
+# 폴드당 학습 30클립(클래스별 6), 평가 15클립(클래스별 3) — 3세션을 모은 값.
+# SEED 와 규칙이 다르다(SEED 는 세션별 9/6).  그 비대칭은 문헌의 것이다.
+# 검증은 학습 클립의 뒤쪽 20% 창.  reports/EVAL_PROTOCOL.md 참조.
+data:
+  root: /mnt/data/original/SEED-V
+  loader: SEEDVRawDataset
+  subjects: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]   # SEED-V 는 16명 (기본값 15 로 떨어지면 안 된다)
+  sessions: [1, 2, 3]
+  segment_length: 800
+  step: 800
+  patch_size: 200
+  norm: scale100
+  ea: true
+  ea_scope: session
+  ea_scale: 0.2
+  ea_trim: 0.05
+  ea_eps: 1.0e-06
+  ea_mode: diag
+labram:
+  repo_path: /home/kihyeonjoo/LaBraM
+  ckpt_path: /home/kihyeonjoo/LaBraM/checkpoints/labram-base.pth
+  model_name: labram_base_patch200_200
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 3
+  dim_feedforward: 512
+  dropout: 0.1
+  n_masked_ch: 5
+training:
+  batch_size: 32
+  lr: 0.0003
+  weight_decay: 0.01
+  epochs: 50
+  device: cuda
+  lambda_aux: 0.5
+  lambda_cos: 0.5
+  lambda_aux_init: 0.1
+  lambda_warmup_epochs: 10
+  log_every: 10
+  save_every: 10
+  checkpoint_dir: checkpoints_labram
+finetune:
+  pretrained_ckpt: checkpoints_labram/pretrain_epoch050.pt
+  skip_adapter_pretrain: true
+  n_classes: 5
+  device: cuda
+  verbose: true
+  eval_every_epoch: true
+  use_lora: false
+  batch_size: 64
+  lr: 0.0005
+  weight_decay: 0.05
+  epochs: 30       # SD 는 학습 창이 400~1200 개뿐이라 50 은 과하다.
+                   # 선택 epoch 이 30 에 몰리면 올린다.
+  warmup_epochs: 5
+  layer_decay: 0.65
+  clip_grad: 3.0
+  label_smoothing: 0.1
+  dropout: 0.0
+  lambda_asym: 0.0
+  lora_r: 8
+  lora_alpha: 16.0
+  lora_lr: 0.0002
+  sd_train_per_session: 9   # sd_n_folds 가 켜지면 쓰이지 않는다
+  n_val_subjects: 2
+  amp: true
+  seeds: [0, 1, 2]
+  sd_val_frac: 0.2          # 학습 클립마다 뒤쪽 20% 창을 검증으로 (a2)
+  sd_n_folds: 3             # 클립 그룹 3폴드: 1-5 / 6-10 / 11-15
+  sd_pool_sessions: true    # 문헌 방식: 각 폴드가 3세션의 해당 클립을 모아 학습
+  results_csv: results/seedv_a02_sd.csv

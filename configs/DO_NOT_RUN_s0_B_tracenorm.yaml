@@ -1,0 +1,83 @@
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ 아직 실행하지 말 것 — ea_estimator 는 코드에 구현되어 있지 않다.        │
+# │                                                                         │
+# │ data/alignment.py 의 EuclideanAligner.fit() 은 mode(full|diag)만 보고   │
+# │ 추정 방식은 항상 mean_covariance(trim=...) 이다.  이 파일을 그대로      │
+# │ 돌리면 ea_estimator 가 조용히 무시되고, 단순히 alpha 만 0.171 로 바뀐   │
+# │ 현재 방식(trim=0.05)이 실행된다.                                        │
+# │                                                                         │
+# │ 승인 시 구현해야 할 것:                                                 │
+# │   1. data/alignment.py — estimator='trim'|'trace_norm'|'median' 추가    │
+# │   2. data/seed_raw_dataset.py — ea_estimator 를 aligner 로 전달         │
+# │   3. finetune_labram_hemi_aux.py:944-956, 830-842 ds_kwargs 에 추가     │
+# │                                                                         │
+# │ 근거: reports/EA_ANALYSIS.md                                            │
+# │ 다만 예상 효과가 이 설계의 최소 감지 효과(+0.032) 아래일 가능성이 높다. │
+# └─────────────────────────────────────────────────────────────────────────┘
+data:
+  root: /mnt/data/original/SEED
+  subjects: null
+  sessions: null
+  segment_length: 800
+  step: 800
+  patch_size: 200
+  norm: scale100
+  ea: true
+  ea_scope: session
+  ea_scale: 0.171
+  ea_trim: 0.05
+  ea_eps: 1.0e-06
+  ea_mode: diag
+  ea_estimator: trace_norm   # (iii) 세그먼트 공분산을 trace로 정규화한 뒤 평균
+labram:
+  repo_path: /home/kihyeonjoo/LaBraM
+  ckpt_path: /home/kihyeonjoo/LaBraM/checkpoints/labram-base.pth
+  model_name: labram_base_patch200_200
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 3
+  dim_feedforward: 512
+  dropout: 0.1
+  n_masked_ch: 5
+training:
+  batch_size: 32
+  lr: 0.0003
+  weight_decay: 0.01
+  epochs: 50
+  device: cuda
+  lambda_aux: 0.5
+  lambda_cos: 0.5
+  lambda_aux_init: 0.1
+  lambda_warmup_epochs: 10
+  log_every: 10
+  save_every: 10
+  checkpoint_dir: checkpoints_labram
+finetune:
+  pretrained_ckpt: checkpoints_labram/pretrain_epoch050.pt
+  skip_adapter_pretrain: true
+  n_classes: 3
+  device: cuda
+  verbose: true
+  eval_every_epoch: true
+  use_lora: false
+  batch_size: 64
+  lr: 0.0005
+  weight_decay: 0.05
+  epochs: 50
+  warmup_epochs: 5
+  layer_decay: 0.65
+  clip_grad: 3.0
+  label_smoothing: 0.1
+  dropout: 0.0
+  lambda_asym: 0.0
+  lora_r: 8
+  lora_alpha: 16.0
+  lora_lr: 0.0002
+  sd_train_per_session: 9
+  n_val_subjects: 2
+  amp: true
+  seeds: [0, 1, 2]
+  save_logits: logits/s0_B_tracenorm_S{fold}_seed{seed}.npz
+  save_state: checkpoints_s0/B_tracenorm_S{fold}_seed{seed}.pt
+  results_csv: results/s0_B_tracenorm.csv
