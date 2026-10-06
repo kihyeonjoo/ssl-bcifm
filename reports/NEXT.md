@@ -1467,3 +1467,21 @@ SSVEP · ERP 비추천.
   막대 = 부트스트랩 95% CI, 별 = Wilcoxon), (b) 피험자별 일반 → CAFT (none 9/16 · 중심화 13/16 · + SLA 15/16), (c) 시드 수준 정확도 대
   어긋남 c (일반 3 · CAFT ① 3 · ①+② 시드 0).  첫 판은 제목 · 주석이 겹쳐 제목을 줄이고 (a) 띠를 막대로, 주석을 4줄로 나눔.
 - CAFT_METHOD 9-1 에 그림 3 (7쪽), CAFT_OVERVIEW 5절 결과 상자 뒤에 그림 3 (4쪽).
+
+**10-06 11:1x–11:5x 1~2시간 작업 (사용자: "1~2시간 정도 할 수 있는 작업을 먼저 수행해") — GPU 안 씀**
+- GitHub 백업 cc16e4b (시드 1·2, 3시드 요약, 결과 그림, DEAP) → kihyeonjoo/ssl-bcifm fix/seed-labels-and-loso-protocol, 원격 = 로컬 확인.
+- 교환 캘리브레이션 대조: `analyze_calib_swap.py` (analyze_sla center 경로에서 빼는 평균의 출처만 own · other_sess · other_subj · pop),
+  `calib_swap_all.sh` (7개 팔, 회귀 6/6 전부) → results/{팔}_calib_swap.npz, `summarize_calib_swap.py` → results/calib_swap_summary.txt.
+  끝까지 클립 (시드 평균, ⓐ | ⓑ | ⓑ−ⓐ): 적응 없음 0.311 | 0.318 | +0.007 · 집단 평균 0.318 | 0.318 | 0.000 · 다른 사람 (같은 영상)
+  0.312 | 0.295 | −0.017 (6/16, p=0.12) · 본인 다른 세션 0.329 | 0.362 | +0.033 (13/16, p=0.051) · 본인 0.367 | 0.415 | +0.048 (p=0.009).
+  → 이득은 본인 밀림에서 (다른 사람 평균으로 얻는 몫 ⓐ 2% · ⓑ −24%) — 캘리브레이션 영상 내용이 아님.  CAFT 이득도 본인 캘리브레이션에
+  묶임 (남의 평균 · 집단 평균이면 ⓑ ≤ ⓐ).  다른 날 평균은 일부 (ⓐ 32% · ⓑ 45%).  20초도 같은 모양.
+- 떨어진 피험자 진단: `diagnose_caft_subjects.py` → results/caft_subject_diagnosis.txt.  Δ정확도 대 Δc Spearman ρ = +0.77 (p=0.0004),
+  c 가 내려간 3명 = 떨어진 3명 (S6 Δc −0.080 · S8 −0.058 · S14 −0.081, 나머지 13명 c 0.317 → 0.422).  전달식 상한도 같이 떨어짐 (캘리브레이션
+  대표성 문제 아님), 정답 회전 상한은 유지 (S6 0.787 → 0.763, 정보 손실 아님) → 방향 어긋남.  + SLA 에서 S6 0.387 → 0.412 · S8 0.481 → 0.496
+  회복, S14 만 −0.028 (정답 회전 상한 0.56~0.59 의 어려운 피험자).  S6 은 세 세션 모두 하락, 공포 · 슬픔 · 중립 · 기쁨 재현율 하락.
+- ⓑ0 준비: finetune_labram_hemi_aux.py 에 `caft_center` (기본 켬 — ⓑ · ⓒ 그대로, 끄면 구조 배치만).  ⓐ 손실도 CE 만임을 확인
+  (compute_loss = CE + lambda_asym 0, lambda_aux · lambda_cos 키는 쓰이지 않음).  configs/caftb0_seedv_noea.yaml (caft_center false, 평가
+  중심화 끔 = 학습 연산과 같게), configs/smoke_caftb0.yaml (7명 · 1 epoch), caftb0_chain.sh (학습 → 캐시 → 분석).  GPU 스모크 · 본 실행은
+  승인 대기 (본 실행 약 7.5시간).
+- 문서: CAFT_METHOD 9-3 (교환 대조 표 · 해석) · 9-4 (진단 표 · 기제 · 배포 권장 CAFT + SLA) 추가 (7쪽).

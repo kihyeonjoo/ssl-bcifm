@@ -607,6 +607,9 @@ def _train_and_eval(cfg, train_ds, test_ds, device, val_ds=None, fold_tag="",
     caft_K = int(fc.get("caft_subjects_per_batch", 4))
     caft_M = int(fc.get("caft_windows_per_subject", 15))
     caft_align = float(fc.get("caft_align", 0.0))
+    # ⓑ0 대조 (2026-10-06): 구조 배치는 그대로 두고 배치 안 중심화만 끈다 — 이득이 배치 구성이 아니라 평균 빼기에서
+    # 오는지 가른다.  기본 (켬) 이면 ⓑ · ⓒ 와 같다.
+    caft_center = bool(fc.get("caft_center", True))
     if caft:
         from caft import CAFTBatchSampler, in_batch_center, stim_align_loss
         if isinstance(train_ds, Subset):
@@ -616,7 +619,7 @@ def _train_and_eval(cfg, train_ds, test_ds, device, val_ds=None, fold_tag="",
         train_loader = DataLoader(train_ds, batch_sampler=caft_sampler, num_workers=4, pin_memory=True,
                                   worker_init_fn=seed_worker)
         print(f"[CAFT] 배치 = 피험자 {caft_K} × 위치 {caft_M} = {caft_K * caft_M} 창, 정렬 손실 가중 {caft_align}, "
-              f"epoch 당 {len(caft_sampler)} 배치", flush=True)
+              f"배치 안 중심화 {'켬' if caft_center else '끔 (ⓑ0 대조)'}, epoch 당 {len(caft_sampler)} 배치", flush=True)
     else:
         train_loader = DataLoader(
             train_ds, batch_size=fc["batch_size"],
@@ -797,7 +800,7 @@ def _train_and_eval(cfg, train_ds, test_ds, device, val_ds=None, fold_tag="",
                 # ① 배치 안 즉석 중심화 → head,  ② (선택) 같은 위치의 사람 간 정렬 손실
                 with _amp_ctx(device, amp):
                     out = model(eeg)
-                    zc = in_batch_center(out["z"], caft_K, caft_M)
+                    zc = in_batch_center(out["z"], caft_K, caft_M) if caft_center else out["z"]
                     logits_c = model.main_head(zc)
                     loss = criterion(logits_c, label)
                     if caft_align > 0:

@@ -463,6 +463,64 @@ else:
         f"이득은 ⓐ {sla_a:+.3f} · ⓑ {sla_b:+.3f} 에서 ⓒ {sla_c:+.3f} 로 줄었다 (회전 보정 몫을 학습이 가져감).  그러나 중심화 뒤 클립 "
         f"정확도는 ⓒ {rc[1]:+.3f} ({rc[2]}/16) 로 ⓑ ({rb[1]:+.3f}) 를 넘지 못했고, 중심화를 안 한 경로는 오히려 {cmp('caftc_seedv_noea', 'none')[1]:+.3f} "
         f"다.  방향은 맞췄지만 감정 판별력이 조금 깎인 것으로 보인다 (λ = 0.5 가 강했을 가능성 — 7절 · 관련 연구 조사의 ② 개선 단서).", BODY)
+    # 2026-10-06: 교환 캘리브레이션 대조 (analyze_calib_swap.py) · 떨어진 피험자 진단 (diagnose_caft_subjects.py)
+    if DONE3 and all(os.path.exists(f"results/{t}_calib_swap.npz") for t in A3 + B3):
+        def sw(tags, cond, budget="Tfull"):
+            if cond == "none":
+                return stack3(tags, "none").mean(0)
+            return np.mean([np.load(f"results/{t}_calib_swap.npz")[f"{budget}__{cond}__clip"] for t in tags], axis=0)
+
+        def wil(b, a):
+            d = b - a
+            return float(d.mean()), int((d > 0).sum()), float(stats.wilcoxon(b, a).pvalue)
+        D.P("9-3. 교환 캘리브레이션 대조 — 이득은 '본인' 캘리브레이션에서 온다", H3)
+        CONDS = (("none", "적응 없음"), ("pop", "집단 평균 (학습 피험자)"), ("other_subj", "다른 사람 · 같은 영상"),
+                 ("other_sess", "본인 · 다른 세션 (다른 날 · 다른 영상)"), ("own", "본인 · 같은 세션 (기존 중심화)"))
+        rows = [["빼는 평균 (끝까지, 클립 16명)", "ⓐ 일반 (시드 3개)", "ⓑ CAFT ① (시드 3개)", "ⓑ − ⓐ (향상, p)"]]
+        for cnd, lab in CONDS:
+            a, b = sw(A3, cnd), sw(B3, cnd)
+            dm, up, p = wil(b, a)
+            rows.append([lab, f"{a.mean():.3f}", f"{b.mean():.3f}", f"{dm:+.3f} ({up}/16, {ptxt(p)})"])
+        D.T(rows, [62, 30, 32, 42], hl=(3, 5))
+        own_a, own_b = sw(A3, "own"), sw(B3, "own")
+        oa, ob = wil(own_a, sw(A3, "other_subj")), wil(own_b, sw(B3, "other_subj"))
+        share = lambda tags: (sw(tags, "other_subj").mean() - sw(tags, "none").mean()) / (sw(tags, "own").mean() - sw(tags, "none").mean())
+        sess = lambda tags: (sw(tags, "other_sess").mean() - sw(tags, "none").mean()) / (sw(tags, "own").mean() - sw(tags, "none").mean())
+        D.P(f"analyze_sla 의 중심화 경로 (같은 캘리브레이션 추출 · 난수 · prototype · 채점) 에서 빼는 평균의 출처만 바꿨다 (본인 조건은 "
+            f"기존 값과 피험자별로 같다, 7개 팔 모두 회귀 6/6).  <b>같은 영상을 본 다른 사람의 평균을 빼면 이득이 사라진다</b> — 본인 대비 "
+            f"ⓐ {oa[0]:+.3f} ({oa[1]}/16, {ptxt(oa[2])}), ⓑ {ob[0]:+.3f} ({ob[1]}/16, {ptxt(ob[2])}) 낮고, 적응 없음 대비 얻는 몫은 ⓐ "
+            f"{share(A3):.0%} · ⓑ {share(B3):.0%} 다.  즉 중심화가 빼는 것은 캘리브레이션 영상의 내용이 아니라 그 사람의 밀림이다 (자극 "
+            f"지름길 해석의 일부를 반박).  <b>CAFT 의 이득도 본인 캘리브레이션에 묶여 있다</b> — 남의 평균이나 집단 평균을 빼면 ⓑ 는 ⓐ 보다 "
+            f"낫지 않다.  CAFT 는 특징을 두루 좋게 만든 것이 아니라 '본인 평균을 빼는 배포' 에 맞춰진 것이다.  본인 · 다른 세션 (다른 날) "
+            f"의 평균은 이득의 일부를 준다 (ⓐ {sess(A3):.0%} · ⓑ {sess(B3):.0%}) — 밀림에는 사람에 고정된 몫과 날마다 바뀌는 몫이 함께 있고, "
+            f"같은 세션 캘리브레이션이 가장 좋다.  다른 사람은 그 fold 모델이 본 학습 · 검증 피험자다.", BODY)
+
+        D.P("9-4. 떨어진 피험자 진단 — 방향이 어긋나는 사람, 자극 시점 정렬로 회복", H3)
+        cA = np.mean([np.asarray(ARM3[t]["c"], float) for t in A3], 0)
+        cB = np.mean([np.asarray(ARM3[t]["c"], float) for t in B3], 0)
+        rho, prho = stats.spearmanr(cB - cA, own_b - own_a)
+        subj = np.load(f"results/{B3[0]}_sla.npz")["subjects"]
+        tr = lambda tags: np.mean([np.load(f"results/{t}_calib_protocol_r10.npz")["transductive__proto_clip"] for t in tags], 0)
+        orc = lambda tags: np.mean([np.load(f"results/{t}_calib_rotation.npz")["Tfull__oracle__clip"] for t in tags], 0)
+        slA, slB = stack3(A3, "Tfull_sla").mean(0), stack3(B3, "Tfull_sla").mean(0)
+        trA, trB, orA, orB = tr(A3), tr(B3), orc(A3), orc(B3)
+        rows = [["피험자 (시드 평균, ⓐ → ⓑ)", "본인 중심화", "평가 데이터 미리 쓴 상한", "정답 회전 상한", "어긋남 c", "+ 자극 시점 정렬"]]
+        drop = [i for i in range(16) if own_b[i] < own_a[i]]
+        rest = [i for i in range(16) if i not in drop]
+        for i in drop:
+            rows.append([f"S{int(subj[i])}", f"{own_a[i]:.3f} → {own_b[i]:.3f}", f"{trA[i]:.3f} → {trB[i]:.3f}",
+                         f"{orA[i]:.3f} → {orB[i]:.3f}", f"{cA[i]:.3f} → {cB[i]:.3f}", f"{slA[i]:.3f} → {slB[i]:.3f}"])
+        rows.append([f"나머지 {len(rest)}명 평균"] + [f"{x[0][rest].mean():.3f} → {x[1][rest].mean():.3f}" for x in
+                                                ((own_a, own_b), (trA, trB), (orA, orB), (cA, cB), (slA, slB))])
+        D.T(rows, [34, 26, 28, 26, 24, 28], hl=(len(rows) - 1,))
+        sla_drop = [f"S{int(subj[i])}" for i in range(16) if slB[i] < slA[i]]
+        D.P(f"<b>피험자별 정확도 변화는 방향 일치 변화를 따라간다</b>: 16명에서 Δ정확도 (ⓑ − ⓐ) 대 Δc 의 Spearman ρ = {rho:+.2f} "
+            f"({ptxt(prho)}), c 가 내려간 사람이 정확히 정확도가 내려간 사람이다.  떨어진 사람도 평가 데이터를 미리 쓴 상한까지 같이 "
+            f"떨어지므로 캘리브레이션 평균의 대표성 문제가 아니고, 정답으로 회전을 맞춘 상한은 거의 그대로라 감정 정보가 사라진 것도 "
+            f"아니다 — CAFT 가 집단의 공통 방향 쪽으로 특징을 모으면서 방향이 다른 소수 (S6 등) 의 어긋남이 커진 것이다.  그래서 세션마다 "
+            f"회전을 맞추는 자극 시점 정렬을 더하면 회복된다: 그 위에서 떨어지는 사람은 {', '.join(sla_drop) or '없음'} 뿐이다 (16명 중 "
+            f"{16 - len(sla_drop)}명 향상).  S14 는 정답 회전 상한도 낮은 (0.56~0.59) 어려운 피험자다.  S6 은 세 세션 모두 비슷하게 "
+            f"떨어지고 (한 번의 나쁜 녹화가 아님), 공포 · 슬픔 · 중립 · 기쁨 재현율이 함께 낮아진다.  배포 권장: CAFT + 자극 시점 정렬.", BODY)
     if DONE3:
         D.P("ⓐ 는 CAFT 와 같은 스크립트 (caft_analyze.sh) 로 기존 일반 파인튜닝의 시드 0 · 1 · 2 모델을 다시 분석한 값이다 (시드 3개 "
             "평균은 다른 문서와 같다).  회귀 검사: 모든 팔에서 중심화 값이 같은 캐시 기준과 피험자별로 같다 (최대 차이 0).  모든 팔이 "
